@@ -3,6 +3,9 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter"
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js"
 import { CharacterManager } from "./characterManager"
 
+const EXPORT_TIMEOUT_MS = 12000
+const DIAGNOSTIC_TIMEOUT_MS = 6000
+
 function emitStatus(detail) {
   window.dispatchEvent(new CustomEvent("character2027:glb-export", { detail }))
 }
@@ -86,10 +89,8 @@ function collectMeshDescriptors(model) {
   return descriptors
 }
 
-function buildExportClone(model, { keepTextures = true, omitMeshIndex = null } = {}) {
-  // SkeletonUtils.clone preserves SkinnedMesh -> Skeleton -> Bone relationships
-  // for modular avatars. Preserve the original index buffer BEFORE sanitizing
-  // runtime-only userData.
+function buildExportClone(model, { keepTextures = true, omitMeshIndices = [] } = {}) {
+  const omitSet = new Set(omitMeshIndices)
   const clone = cloneSkinned(model)
   clone.name = "Character2027Export"
 
@@ -104,7 +105,7 @@ function buildExportClone(model, { keepTextures = true, omitMeshIndex = null } =
     const currentMeshIndex = meshIndex
     meshIndex += 1
 
-    if (omitMeshIndex === currentMeshIndex) {
+    if (omitSet.has(currentMeshIndex)) {
       toRemove.push(node)
       return
     }
@@ -127,68 +128,138 @@ function buildExportClone(model, { keepTextures = true, omitMeshIndex = null } =
   return clone
 }
 
-function exportBinaryGLB(model) {
+function exportBinaryGLB(model, timeoutMs = EXPORT_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    const exporter = new GLTFExporter()
-    exporter.parse(
-      model,
-      (result) => {
-        if (result instanceof ArrayBuffer) return resolve(result)
-        reject(new Error("GLTFExporter returned JSON instead of binary GLB data."))
-      },
-      (error) => reject(error instanceof Error ? error : new Error(String(error))),
-      {
-        binary: true,
-        trs: false,
-        onlyVisible: false,
-        truncateDrawRange: true,
-        forcePowerOfTwoTextures: false,
-        maxTextureSize: 4096,
-      },
-    )
+    let settled = false
+    const finishResolve = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const finishReject = (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
+
+    const timer = setTimeout(() => {
+      finishReject(new Error(`GLTFExporter timed out after ${(timeoutMs / 1000).toFixed(0)}s`))
+    }, timeoutMs)
+
+    try {
+      const exporter = new GLTFExporter()
+      exporter.parse(
+        model,
+        (result) => {
+          if (result instanceof ArrayBuffer) return finishResolve(result)
+          finishReject(new Error("GLTFExporter returned JSON instead of binary GLB data."))
+        },
+        finishReject,
+        {
+          binary: true,
+          trs: false,
+          onlyVisible: false,
+          truncateDrawRange: true,
+          forcePowerOfTwoTextures: false,
+          maxTextureSize: 4096,
+        },
+      )
+    } catch (error) {
+      finishReject(error)
+    }
   })
+}
+
+async function canExportWithout(model, omitMeshIndices, timeoutMs = DIAGNOSTIC_TIMEOUT_MS) {
+  try {
+    const diagnosticClone = buildExportClone(model, {
+      keepTextures: false,
+      omitMeshIndices,
+    })
+    const buffer = await exportBinaryGLB(diagnosticClone, timeoutMs)
+    return Boolean(buffer?.byteLength)
+  } catch {
+    return false
+  }
 }
 
 async function diagnoseFailingMesh(model, originalError) {
   const descriptors = collectMeshDescriptors(model)
-  const suspects = []
-  const maxTrials = Math.min(descriptors.length, 24)
+  if (!descriptors.length) {
+    return { originalError: originalError?.message || String(originalError), meshCount: 0, tested: 0, suspects: [] }
+  }
 
   emitStatus({
     status: "diagnosing",
-    message: `GLB failed. Testing ${maxTrials} avatar parts to isolate the incompatible asset…`,
+    message: `GLB stalled/failed. Isolating the incompatible avatar part across ${descriptors.length} meshes…`,
   })
 
-  for (let i = 0; i < maxTrials; i += 1) {
-    const descriptor = descriptors[i]
-    try {
-      const diagnosticClone = buildExportClone(model, {
-        keepTextures: false,
-        omitMeshIndex: descriptor.index,
-      })
-      const buffer = await exportBinaryGLB(diagnosticClone)
-      if (buffer?.byteLength) {
-        suspects.push(descriptor)
-        console.warn("[Character2027] GLB culprit candidate isolated:", descriptor)
+  // Fast binary isolation: if omitting one half makes export succeed, the culprit
+  // is in that omitted half. Repeat until one mesh remains. This avoids up to 24
+  // sequential 6–12 second stalls on problematic avatars.
+  let candidates = descriptors.map((item) => item.index)
+  let tested = 0
+
+  while (candidates.length > 1) {
+    const midpoint = Math.ceil(candidates.length / 2)
+    const left = candidates.slice(0, midpoint)
+    const right = candidates.slice(midpoint)
+
+    emitStatus({
+      status: "diagnosing",
+      message: `Diagnosing GLB… ${candidates.length} candidate parts remain`,
+    })
+
+    tested += 1
+    if (await canExportWithout(model, left)) {
+      candidates = left
+      continue
+    }
+
+    if (right.length) {
+      tested += 1
+      if (await canExportWithout(model, right)) {
+        candidates = right
+        continue
       }
-    } catch {
-      // Expected for non-culprit omissions: the problematic asset is still present.
+    }
+
+    // Neither half alone fixes the export: likely more than one incompatible mesh
+    // or shared skeleton/geometry state. Fall back to a bounded single-mesh scan.
+    const suspects = []
+    const maxTrials = Math.min(descriptors.length, 12)
+    for (let i = 0; i < maxTrials; i += 1) {
+      const descriptor = descriptors[i]
+      tested += 1
+      emitStatus({
+        status: "diagnosing",
+        message: `Diagnosing GLB… testing ${i + 1}/${maxTrials}: ${descriptor.name}`,
+      })
+      if (await canExportWithout(model, [descriptor.index], 4500)) suspects.push(descriptor)
+    }
+
+    return {
+      originalError: originalError?.message || String(originalError),
+      meshCount: descriptors.length,
+      tested,
+      suspects,
+      sharedFailure: suspects.length === 0,
     }
   }
 
-  const diagnostic = {
+  const suspects = candidates.length === 1
+    ? descriptors.filter((item) => item.index === candidates[0])
+    : []
+
+  return {
     originalError: originalError?.message || String(originalError),
     meshCount: descriptors.length,
-    tested: maxTrials,
+    tested,
     suspects,
+    sharedFailure: suspects.length === 0,
   }
-
-  console.group("[Character2027] GLB export diagnostic")
-  console.table(descriptors)
-  if (suspects.length) console.table(suspects)
-  console.groupEnd()
-
-  return diagnostic
 }
 
 async function exportWithFallbacks(model) {
@@ -198,13 +269,13 @@ async function exportWithFallbacks(model) {
       model: () => buildExportClone(model, { keepTextures: true }),
     },
     {
-      // Some avatar packs contain browser/CORS-hostile texture sources. Keep the
-      // full rig and geometry as a motion-test fallback even if a texture cannot
-      // be serialized.
       label: "sanitized-skinned-clone-no-textures",
       model: () => buildExportClone(model, { keepTextures: false }),
     },
     {
+      // Keep this only as the last compatibility route. A timeout is mandatory:
+      // the ONIFORCE/Demon avatar demonstrated that upstream GLTFExporter can
+      // stall indefinitely on the live assembled scene without invoking error.
       label: "live-scene",
       model: () => model,
     },
@@ -216,7 +287,7 @@ async function exportWithFallbacks(model) {
     try {
       emitStatus({ status: "working", strategy: attempt.label })
       console.info(`[Character2027] GLB export attempt: ${attempt.label}`)
-      const buffer = await exportBinaryGLB(attempt.model())
+      const buffer = await exportBinaryGLB(attempt.model(), EXPORT_TIMEOUT_MS)
       if (!buffer?.byteLength) throw new Error("Exporter returned an empty GLB")
       return { buffer, strategy: attempt.label }
     } catch (error) {
@@ -240,8 +311,6 @@ CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
     throw error
   }
 
-  // Preserve upstream manifest download policy. Surface the reason instead of
-  // silently doing nothing so a blocked asset cannot look like a broken button.
   if (!this.canDownload()) {
     const error = new Error("This avatar includes a manifest that does not permit downloading.")
     console.error("[Character2027] GLB export blocked:", error)
@@ -266,6 +335,11 @@ CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
     const culpritText = suspects.length
       ? suspects.map((item) => `${item.name} [${item.material}]`).join("; ")
       : "No single mesh isolated; failure may be shared skeleton/geometry state."
+
+    console.group("[Character2027] GLB export diagnostic")
+    console.table(collectMeshDescriptors(this.characterModel))
+    if (suspects.length) console.table(suspects)
+    console.groupEnd()
 
     emitStatus({
       status: "diagnostic-error",
