@@ -3,7 +3,6 @@ import { solveTwoBoneJointDecomposed } from "./DonorTwoBoneIK"
 
 const _rootPos = new THREE.Vector3()
 const _jointPos = new THREE.Vector3()
-const _endPos = new THREE.Vector3()
 const _childPos = new THREE.Vector3()
 const _currentDir = new THREE.Vector3()
 const _desiredDir = new THREE.Vector3()
@@ -15,7 +14,7 @@ const _newWorldQ = new THREE.Quaternion()
 const _localQ = new THREE.Quaternion()
 const _deltaQ = new THREE.Quaternion()
 const _invParent = new THREE.Quaternion()
-const _localTarget = new THREE.Vector3()
+const _rootWorldQ = new THREE.Quaternion()
 
 function getBone(root, name) {
   return root.getObjectByName(name) || null
@@ -30,9 +29,14 @@ function lengthBetween(a, b) {
   return worldPosition(a, new THREE.Vector3()).distanceTo(worldPosition(b, new THREE.Vector3()))
 }
 
-function localOffsetToWorld(root, offset, out = new THREE.Vector3()) {
-  out.copy(offset)
-  return root.localToWorld(out)
+function worldDirectionFromRoot(root, localDirection, out = new THREE.Vector3()) {
+  root.getWorldQuaternion(_rootWorldQ)
+  return out.copy(localDirection).applyQuaternion(_rootWorldQ).normalize()
+}
+
+function worldOffsetFromAnchor(root, anchorWorld, localOffset, out = new THREE.Vector3()) {
+  root.getWorldQuaternion(_rootWorldQ)
+  return out.copy(localOffset).applyQuaternion(_rootWorldQ).add(anchorWorld)
 }
 
 function orientBoneToward(bone, child, targetWorld, weight = 1) {
@@ -100,8 +104,8 @@ export class HumanoidIKController {
     this.hips = getBone(root, "hips")
     this.head = getBone(root, "head")
     this.chest = getBone(root, "chest")
-    this.restHipsPosition = this.hips?.position.clone() || new THREE.Vector3()
-    this.restRootY = root.position.y
+    this.baseHipsPosition = this.hips?.position.clone() || new THREE.Vector3()
+    this.baseRootY = root.position.y
     this.footAnchors = {
       left: this.chains.leftLeg?.restEndWorld.clone() || null,
       right: this.chains.rightLeg?.restEndWorld.clone() || null,
@@ -109,11 +113,14 @@ export class HumanoidIKController {
   }
 
   setState(state, action = null) {
+    const previous = this.state
     this.state = state
     this.stateTime = 0
     this.actionDuration = action?.getClip?.()?.duration || 1
-    this.restRootY = this.root.position.y
-    if (this.hips) this.restHipsPosition.copy(this.hips.position)
+
+    if (previous === "JUMP" && state !== "JUMP") this.root.position.y = this.baseRootY
+    if (this.hips && !["CROUCH", "SIT_SOFA", "KNEEL"].includes(state)) this.hips.position.copy(this.baseHipsPosition)
+
     if (this.chains.leftLeg) this.footAnchors.left = worldPosition(this.chains.leftLeg.end, new THREE.Vector3())
     if (this.chains.rightLeg) this.footAnchors.right = worldPosition(this.chains.rightLeg.end, new THREE.Vector3())
   }
@@ -121,7 +128,7 @@ export class HumanoidIKController {
   solveChain(chain, targetWorld, poleLocal = chain?.poleLocal, weight = 1) {
     if (!chain || !targetWorld) return
     const upperPos = worldPosition(chain.upper, _rootPos)
-    localOffsetToWorld(this.root, poleLocal, _pole).sub(worldPosition(this.root, new THREE.Vector3())).normalize()
+    worldDirectionFromRoot(this.root, poleLocal, _pole)
     this.root.getWorldQuaternion(_boneWorldQ)
     _restAxis.copy(chain.restAxis).applyQuaternion(_boneWorldQ).normalize()
 
@@ -139,31 +146,31 @@ export class HumanoidIKController {
     orientBoneToward(chain.lower, chain.end, targetWorld, weight)
   }
 
-  _armTarget(offset) {
-    return localOffsetToWorld(this.root, offset, new THREE.Vector3())
-  }
-
   _applySocial(t) {
-    const chestY = worldPosition(this.chest || this.root, new THREE.Vector3()).y
-    const headY = worldPosition(this.head || this.root, new THREE.Vector3()).y
-    const baseY = Math.max(chestY, headY - 0.18)
+    const chestPos = worldPosition(this.chest || this.root, new THREE.Vector3())
+    const headPos = worldPosition(this.head || this.root, new THREE.Vector3())
 
     if (this.state === "WAVE" || this.state === "GOODBYE") {
-      const wave = Math.sin(t * Math.PI * 4) * 0.10
-      const target = this._armTarget(new THREE.Vector3(0.42, baseY - this.root.position.y + wave, 0.18))
-      this.solveChain(this.chains.rightArm, target, new THREE.Vector3(0.8, 0.2, 0.45), 0.92)
+      const wave = Math.sin(t * Math.PI * 4) * 0.08
+      const target = worldOffsetFromAnchor(this.root, headPos, new THREE.Vector3(0.38, 0.04 + wave, 0.10))
+      this.solveChain(this.chains.rightArm, target, new THREE.Vector3(0.85, 0.25, 0.4), 0.94)
     }
 
-    if (this.state === "POINT" || this.state === "AFTER_YOU") {
-      const target = this._armTarget(new THREE.Vector3(0.45, chestY - this.root.position.y - 0.08, 0.75))
-      this.solveChain(this.chains.rightArm, target, new THREE.Vector3(0.9, -0.1, 0.3), 0.92)
+    if (this.state === "POINT") {
+      const target = worldOffsetFromAnchor(this.root, chestPos, new THREE.Vector3(0.30, -0.02, 0.72))
+      this.solveChain(this.chains.rightArm, target, new THREE.Vector3(0.9, -0.05, 0.25), 0.94)
+    }
+
+    if (this.state === "AFTER_YOU") {
+      const target = worldOffsetFromAnchor(this.root, chestPos, new THREE.Vector3(0.48, -0.24, 0.42))
+      this.solveChain(this.chains.rightArm, target, new THREE.Vector3(0.9, -0.15, 0.18), 0.92)
     }
 
     if (this.state === "WELCOME") {
-      const left = this._armTarget(new THREE.Vector3(-0.55, chestY - this.root.position.y - 0.08, 0.35))
-      const right = this._armTarget(new THREE.Vector3(0.55, chestY - this.root.position.y - 0.08, 0.35))
-      this.solveChain(this.chains.leftArm, left, new THREE.Vector3(-0.9, 0.15, 0.2), 0.85)
-      this.solveChain(this.chains.rightArm, right, new THREE.Vector3(0.9, 0.15, 0.2), 0.85)
+      const left = worldOffsetFromAnchor(this.root, chestPos, new THREE.Vector3(-0.48, -0.12, 0.28))
+      const right = worldOffsetFromAnchor(this.root, chestPos, new THREE.Vector3(0.48, -0.12, 0.28))
+      this.solveChain(this.chains.leftArm, left, new THREE.Vector3(-0.9, 0.12, 0.2), 0.9)
+      this.solveChain(this.chains.rightArm, right, new THREE.Vector3(0.9, 0.12, 0.2), 0.9)
     }
   }
 
@@ -171,19 +178,23 @@ export class HumanoidIKController {
     if (!this.hips) return
 
     const crouchLike = this.state === "CROUCH" || this.state === "SIT_SOFA" || this.state === "KNEEL"
+    if (!crouchLike) this.hips.position.copy(this.baseHipsPosition)
+
     if (crouchLike) {
       const envelope = Math.sin(Math.PI * THREE.MathUtils.clamp(t, 0, 1))
       const depth = this.state === "SIT_SOFA" ? 0.34 : this.state === "KNEEL" ? 0.27 : 0.22
-      this.hips.position.copy(this.restHipsPosition)
+      this.hips.position.copy(this.baseHipsPosition)
       this.hips.position.y -= depth * envelope
       this.hips.updateWorldMatrix(true, true)
-      if (this.footAnchors.left) this.solveChain(this.chains.leftLeg, this.footAnchors.left, new THREE.Vector3(-0.2, 0.1, 1), 0.96)
-      if (this.footAnchors.right) this.solveChain(this.chains.rightLeg, this.footAnchors.right, new THREE.Vector3(0.2, 0.1, 1), 0.96)
+      if (this.footAnchors.left) this.solveChain(this.chains.leftLeg, this.footAnchors.left, new THREE.Vector3(-0.2, 0.05, 1), 0.98)
+      if (this.footAnchors.right) this.solveChain(this.chains.rightLeg, this.footAnchors.right, new THREE.Vector3(0.2, 0.05, 1), 0.98)
     }
 
     if (this.state === "JUMP") {
       const jump = Math.sin(Math.PI * THREE.MathUtils.clamp(t, 0, 1))
-      this.root.position.y = this.restRootY + jump * 0.34
+      this.root.position.y = this.baseRootY + jump * 0.34
+    } else {
+      this.root.position.y = this.baseRootY
     }
   }
 
@@ -200,7 +211,7 @@ export class HumanoidIKController {
   }
 
   dispose() {
-    if (this.hips) this.hips.position.copy(this.restHipsPosition)
-    this.root.position.y = this.restRootY
+    if (this.hips) this.hips.position.copy(this.baseHipsPosition)
+    this.root.position.y = this.baseRootY
   }
 }
