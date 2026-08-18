@@ -26,6 +26,10 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
         setGlbBusy(true)
         setGlbStatus(detail.message || `Exporting GLB… ${detail.strategy || ""}`)
       }
+      if (detail.status === "diagnosing") {
+        setGlbBusy(true)
+        setGlbStatus(detail.message || "GLB failed. Isolating the incompatible avatar part…")
+      }
       if (detail.status === "success") {
         setGlbBusy(false)
         setGlbStatus(`GLB ready: ${detail.fileName} · ${detail.sizeMB} MB`)
@@ -33,6 +37,13 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
       if (detail.status === "blocked") {
         setGlbBusy(false)
         setGlbStatus(`GLB blocked: ${detail.message}`)
+      }
+      if (detail.status === "diagnostic-error") {
+        setGlbBusy(false)
+        const prefix = detail.suspects?.length
+          ? `GLB culprit candidate: ${detail.culpritText}`
+          : `GLB diagnostic: ${detail.culpritText}`
+        setGlbStatus(`${prefix} · tested ${detail.tested}/${detail.meshCount} meshes`)
       }
       if (detail.status === "error") {
         setGlbBusy(false)
@@ -78,13 +89,25 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
       await characterManager.downloadGLB(name, options);
     } catch (error) {
       setGlbBusy(false)
-      setGlbStatus(`GLB failed: ${error?.message || error}`)
+      const diagnostic = error?.character2027Diagnostic
+      if (diagnostic) {
+        const suspects = diagnostic.suspects || []
+        const culpritText = suspects.length
+          ? suspects.map((item) => `${item.name} [${item.material}]`).join("; ")
+          : "No single mesh isolated; failure may be shared skeleton/geometry state."
+        setGlbStatus(`GLB diagnostic: ${culpritText} · tested ${diagnostic.tested}/${diagnostic.meshCount} meshes`)
+      } else {
+        setGlbStatus(`GLB failed: ${error?.message || error}`)
+      }
     }
   }
 
   const purchaseAssets = () =>{
     onPurchaseClick();
   }
+
+  const statusIsSuccess = glbStatus.startsWith("GLB ready")
+  const statusIsFailure = glbStatus.startsWith("GLB failed") || glbStatus.startsWith("GLB blocked") || glbStatus.startsWith("GLB diagnostic") || glbStatus.startsWith("GLB culprit")
 
   return (
     <React.Fragment>
@@ -101,10 +124,10 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
           {glbStatus && (
             <div style={{
               marginTop: 6,
-              maxWidth: 280,
+              maxWidth: 320,
               fontSize: 11,
               lineHeight: 1.35,
-              color: glbStatus.startsWith("GLB ready") ? "#7ee787" : glbStatus.startsWith("GLB failed") || glbStatus.startsWith("GLB blocked") ? "#ff9b9b" : "#d0d0d0",
+              color: statusIsSuccess ? "#7ee787" : statusIsFailure ? "#ff9b9b" : "#d0d0d0",
             }}>
               {glbStatus}
             </div>
