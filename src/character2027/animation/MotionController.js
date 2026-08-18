@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { HumanoidIKController } from "../ik/HumanoidIKController"
 
 export const MOTION_STATES = ["IDLE", "WALK", "STOP", "TURN_LEFT", "TURN_RIGHT"]
 
@@ -19,7 +20,7 @@ export class MotionController {
     this.currentState = null
     this.currentAction = null
     this.fadeSeconds = 0.22
-    this.postProcessor = null
+    this.postProcessor = new HumanoidIKController(root)
 
     this.navigation = {
       mode: "IDLE",
@@ -48,6 +49,7 @@ export class MotionController {
   }
 
   setPostProcessor(processor) {
+    this.postProcessor?.dispose?.()
     this.postProcessor = processor || null
   }
 
@@ -85,6 +87,16 @@ export class MotionController {
     return this.actions.has(state)
   }
 
+  _prepareTurnBy(angleRadians, options = {}) {
+    _turnStartQuaternion.copy(this.root.quaternion)
+    _yawQuaternion.setFromAxisAngle(_worldUp, angleRadians)
+    _turnTargetQuaternion.copy(_turnStartQuaternion).premultiply(_yawQuaternion)
+    this.navigation.turnElapsed = 0
+    this.navigation.turnDuration = Math.max(0.18, options.duration ?? 0.72)
+    this.navigation.turnOnComplete = options.onComplete ?? null
+    this.navigation.mode = "TURN_BY"
+  }
+
   transitionTo(state, fadeSeconds = null) {
     const next = this.actions.get(state)
     if (!next) throw new Error(`No clip registered for ${state}`)
@@ -98,6 +110,11 @@ export class MotionController {
     this.currentAction = next
     this.currentState = state
     this.postProcessor?.setState?.(state, next)
+
+    if (this.navigation.mode !== "TURN_BY") {
+      if (state === "TURN_LEFT_V2" || state === "TURN_LEFT") this._prepareTurnBy(Math.PI / 2, { duration: next.getClip().duration })
+      if (state === "TURN_RIGHT_V2" || state === "TURN_RIGHT") this._prepareTurnBy(-Math.PI / 2, { duration: next.getClip().duration })
+    }
   }
 
   playAction(state, options = {}) {
@@ -124,14 +141,7 @@ export class MotionController {
   }
 
   turnBy(angleRadians, options = {}) {
-    _turnStartQuaternion.copy(this.root.quaternion)
-    _yawQuaternion.setFromAxisAngle(_worldUp, angleRadians)
-    _turnTargetQuaternion.copy(_turnStartQuaternion).premultiply(_yawQuaternion)
-    this.navigation.turnElapsed = 0
-    this.navigation.turnDuration = Math.max(0.18, options.duration ?? 0.72)
-    this.navigation.turnOnComplete = options.onComplete ?? null
-    this.navigation.mode = "TURN_BY"
-
+    this._prepareTurnBy(angleRadians, options)
     const state = angleRadians >= 0
       ? (this.has("TURN_LEFT_V2") ? "TURN_LEFT_V2" : (this.has("TURN_LEFT") ? "TURN_LEFT" : null))
       : (this.has("TURN_RIGHT_V2") ? "TURN_RIGHT_V2" : (this.has("TURN_RIGHT") ? "TURN_RIGHT" : null))
