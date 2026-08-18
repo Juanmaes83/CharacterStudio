@@ -3,7 +3,7 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
-import { inspectHumanoid } from "../character2027/rig/BoneMap"
+import { inspectHumanoid, unifyCompatibleSkeletons } from "../character2027/rig/BoneMap"
 import { retargetClipToCharacter } from "../character2027/animation/Retargeter"
 import { MotionController, MOTION_STATES } from "../character2027/animation/MotionController"
 
@@ -14,7 +14,6 @@ const ui = {
   page: { position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "340px 1fr", background: "#111", color: "#eee", fontFamily: "Inter, system-ui, sans-serif" },
   panel: { padding: 18, overflowY: "auto", borderRight: "1px solid #333", background: "#171717" },
   stage: { position: "relative", minWidth: 0 },
-  canvas: { width: "100%", height: "100%", display: "block" },
   title: { fontSize: 20, fontWeight: 700, marginBottom: 4 },
   subtitle: { fontSize: 12, opacity: 0.65, marginBottom: 18, lineHeight: 1.4 },
   section: { marginTop: 18, paddingTop: 16, borderTop: "1px solid #333" },
@@ -63,6 +62,7 @@ export default function MotionLab() {
 
   const [avatarName, setAvatarName] = useState("No avatar loaded")
   const [rigReport, setRigReport] = useState(null)
+  const [skeletonReport, setSkeletonReport] = useState(null)
   const [state, setState] = useState(null)
   const [slotReports, setSlotReports] = useState({})
   const [error, setError] = useState("")
@@ -87,8 +87,7 @@ export default function MotionLab() {
     controls.target.set(0, 1, 0)
     controls.enableDamping = true
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 2.2)
-    scene.add(hemi)
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.2))
     const key = new THREE.DirectionalLight(0xffffff, 3.0)
     key.position.set(3, 5, 4)
     key.castShadow = true
@@ -128,7 +127,7 @@ export default function MotionLab() {
       controllerRef.current?.dispose()
       controls.dispose()
       renderer.dispose()
-      mount.removeChild(renderer.domElement)
+      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
   }, [])
 
@@ -149,17 +148,19 @@ export default function MotionLab() {
 
       const box = new THREE.Box3().setFromObject(root)
       const size = box.getSize(new THREE.Vector3())
-      const center = box.getCenter(new THREE.Vector3())
       const height = Math.max(size.y, 0.0001)
       const desiredHeight = 1.75
-      const scale = desiredHeight / height
-      root.scale.multiplyScalar(scale)
+      root.scale.multiplyScalar(desiredHeight / height)
       root.updateMatrixWorld(true)
+
       const scaledBox = new THREE.Box3().setFromObject(root)
       const scaledCenter = scaledBox.getCenter(new THREE.Vector3())
       root.position.x -= scaledCenter.x
       root.position.z -= scaledCenter.z
       root.position.y -= scaledBox.min.y
+      root.updateMatrixWorld(true)
+
+      const normalizedSkeletons = unifyCompatibleSkeletons(root)
 
       sceneRef.current.add(root)
       avatarRef.current = root
@@ -167,6 +168,7 @@ export default function MotionLab() {
       setSlotReports({})
       setState(null)
       setAvatarName(file.name)
+      setSkeletonReport(normalizedSkeletons)
       setRigReport(inspectHumanoid(root))
     } catch (e) {
       setError(`Avatar load failed: ${e.message || e}`)
@@ -218,7 +220,7 @@ export default function MotionLab() {
         <div style={ui.title}>CHARACTER 2027 — MOTION LAB</div>
         <div style={ui.subtitle}>Vertical slice: GLB → rig validation → external animation → retarget → deterministic motion states.</div>
 
-        <label style={ui.label}>1. TARGET AVATAR (.glb / .gltf)</label>
+        <label style={ui.label}>1. TARGET AVATAR (.glb recommended)</label>
         <input style={ui.input} type="file" accept=".glb,.gltf" onChange={(e) => e.target.files?.[0] && loadAvatar(e.target.files[0])} />
 
         <div style={ui.section}>
@@ -227,8 +229,9 @@ export default function MotionLab() {
           {rigReport && (
             <div style={{ marginTop: 9 }}>
               <span style={ui.badge}>{rigReport.pass ? "RIG PASS" : "RIG REVIEW"}</span>
-              <span style={ui.badge}>{rigReport.boneCount} bones</span>
+              <span style={ui.badge}>{rigReport.boneCount} unique bone names</span>
               <span style={ui.badge}>{rigReport.skinnedMeshCount} skinned meshes</span>
+              {skeletonReport && <span style={ui.badge}>{skeletonReport.unifiedMeshes}/{Math.max(skeletonReport.skinnedMeshes - 1, 0)} extra skins unified</span>}
               {rigReport.missing.length > 0 && <div style={ui.pre}>Missing: {rigReport.missing.join(", ")}</div>}
             </div>
           )}
