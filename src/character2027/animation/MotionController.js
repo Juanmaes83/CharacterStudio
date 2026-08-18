@@ -11,9 +11,10 @@ export class MotionController {
     this.root = root
     this.mixer = new THREE.AnimationMixer(root)
     this.actions = new Map()
+    this.actionOptions = new Map()
     this.currentState = null
     this.currentAction = null
-    this.fadeSeconds = 0.2
+    this.fadeSeconds = 0.22
 
     this.navigation = {
       mode: "IDLE",
@@ -31,22 +32,29 @@ export class MotionController {
     this.fadeSeconds = Math.max(0, Number(seconds) || 0)
   }
 
-  register(state, clip) {
-    if (!MOTION_STATES.includes(state)) throw new Error(`Unknown motion state: ${state}`)
+  register(state, clip, options = {}) {
+    if (!state || !clip) throw new Error("register requires state and clip")
     const previous = this.actions.get(state)
     if (previous) {
       previous.stop()
       this.mixer.uncacheAction(previous.getClip(), this.root)
     }
 
+    const loop = options.loop ?? (state === "IDLE" || state === "WALK")
+    const clamp = options.clamp ?? !loop
+    const repetitions = loop ? Infinity : 1
+
     const action = this.mixer.clipAction(clip)
     action.enabled = true
-    action.clampWhenFinished = state === "STOP" || state.startsWith("TURN_")
-    action.setLoop(
-      action.clampWhenFinished ? THREE.LoopOnce : THREE.LoopRepeat,
-      action.clampWhenFinished ? 1 : Infinity,
-    )
+    action.clampWhenFinished = clamp
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, repetitions)
     this.actions.set(state, action)
+    this.actionOptions.set(state, {
+      loop,
+      clamp,
+      recoverTo: options.recoverTo ?? (loop ? null : "IDLE"),
+      fadeSeconds: options.fadeSeconds ?? this.fadeSeconds,
+    })
     return action
   }
 
@@ -54,16 +62,25 @@ export class MotionController {
     return this.actions.has(state)
   }
 
-  transitionTo(state, fadeSeconds = this.fadeSeconds) {
+  transitionTo(state, fadeSeconds = null) {
     const next = this.actions.get(state)
     if (!next) throw new Error(`No clip registered for ${state}`)
-    if (this.currentAction === next) return
+    if (this.currentAction === next && next.isRunning()) return
 
+    const options = this.actionOptions.get(state) || {}
+    const fade = fadeSeconds ?? options.fadeSeconds ?? this.fadeSeconds
     next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play()
-    if (this.currentAction) this.currentAction.crossFadeTo(next, fadeSeconds, false)
+    if (this.currentAction && this.currentAction !== next) {
+      this.currentAction.crossFadeTo(next, fade, false)
+    }
 
     this.currentAction = next
     this.currentState = state
+  }
+
+  playAction(state, options = {}) {
+    this.transitionTo(state, options.fadeSeconds)
+    return this.actions.get(state)
   }
 
   walkTo(target, options = {}) {
@@ -123,8 +140,8 @@ export class MotionController {
       }
 
       _direction.normalize()
-      const distanceScale = THREE.MathUtils.clamp(distance / 0.35, 0.2, 1)
-      const turnScale = THREE.MathUtils.clamp(1 - angle / Math.PI, 0.25, 1)
+      const distanceScale = THREE.MathUtils.clamp(distance / 0.45, 0.16, 1)
+      const turnScale = THREE.MathUtils.clamp(1 - angle / Math.PI, 0.18, 1)
       const step = Math.min(distance, this.navigation.walkSpeed * distanceScale * turnScale * delta)
       this.root.position.addScaledVector(_direction, step)
     }
@@ -148,5 +165,6 @@ export class MotionController {
     this.mixer.stopAllAction()
     this.mixer.uncacheRoot(this.root)
     this.actions.clear()
+    this.actionOptions.clear()
   }
 }
