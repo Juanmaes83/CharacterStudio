@@ -3,6 +3,10 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter"
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js"
 import { CharacterManager } from "./characterManager"
 
+function emitStatus(detail) {
+  window.dispatchEvent(new CustomEvent("character2027:glb-export", { detail }))
+}
+
 function saveArrayBuffer(buffer, filename) {
   const blob = new Blob([buffer], { type: "model/gltf-binary" })
   const url = URL.createObjectURL(blob)
@@ -13,52 +17,73 @@ function saveArrayBuffer(buffer, filename) {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
-function toStandardMaterial(material) {
-  if (!material) return new THREE.MeshStandardMaterial({ color: 0xffffff })
-  if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) return material.clone()
+function getSafeColor(material) {
+  const source = material?.color || material?.uniforms?.litFactor?.value
+  if (source?.isColor) return source.clone()
+  if (source?.x != null && source?.y != null && source?.z != null) {
+    return new THREE.Color(source.x, source.y, source.z)
+  }
+  if (Array.isArray(source) && source.length >= 3) {
+    return new THREE.Color(source[0], source[1], source[2])
+  }
+  return new THREE.Color(0xffffff)
+}
 
-  const color = material.color?.clone?.() || material.uniforms?.litFactor?.value?.clone?.() || new THREE.Color(0xffffff)
+function getSafeMap(material) {
+  return material?.map || material?.uniforms?.map?.value || material?.uniforms?.mainTex?.value || null
+}
+
+function toStandardMaterial(material, keepTextures = true) {
+  if (!material) return new THREE.MeshStandardMaterial({ color: 0xffffff })
+
   const converted = new THREE.MeshStandardMaterial({
     name: material.name || "Character2027_Material",
-    color,
-    map: material.map || material.uniforms?.map?.value || material.uniforms?.mainTex?.value || null,
-    normalMap: material.normalMap || null,
+    color: getSafeColor(material),
+    map: keepTextures ? getSafeMap(material) : null,
+    normalMap: keepTextures ? material.normalMap || null : null,
+    roughnessMap: keepTextures ? material.roughnessMap || null : null,
+    metalnessMap: keepTextures ? material.metalnessMap || null : null,
+    emissiveMap: keepTextures ? material.emissiveMap || null : null,
+    alphaMap: keepTextures ? material.alphaMap || null : null,
     roughness: Number.isFinite(material.roughness) ? material.roughness : 0.8,
     metalness: Number.isFinite(material.metalness) ? material.metalness : 0,
     transparent: Boolean(material.transparent),
     opacity: Number.isFinite(material.opacity) ? material.opacity : 1,
+    alphaTest: Number.isFinite(material.alphaTest) ? material.alphaTest : 0,
     side: material.side ?? THREE.FrontSide,
   })
-  converted.alphaTest = material.alphaTest || 0
+
+  if (material.emissive?.isColor) converted.emissive.copy(material.emissive)
   return converted
 }
 
-function buildExportClone(model) {
-  // SkeletonUtils.clone preserves SkinnedMesh -> Skeleton -> Bone relationships,
-  // unlike Object3D.clone() for modular avatars with repeated skins.
+function buildExportClone(model, { keepTextures = true } = {}) {
+  // SkeletonUtils.clone preserves SkinnedMesh -> Skeleton -> Bone relationships
+  // for modular avatars. Preserve the original index buffer BEFORE sanitizing
+  // runtime-only userData.
   const clone = cloneSkinned(model)
   clone.name = "Character2027Export"
 
   clone.traverse((node) => {
-    // VRM helpers/managers can carry circular references in userData. They are
-    // runtime-only and must not be serialized into the GLB.
-    node.userData = {}
+    const originalIndex = node.userData?.origIndexBuffer || null
 
     if (node.isMesh) {
       node.geometry = node.geometry?.clone?.() || node.geometry
+      if (originalIndex && node.geometry) node.geometry.setIndex(originalIndex)
+
       node.material = Array.isArray(node.material)
-        ? node.material.map(toStandardMaterial)
-        : toStandardMaterial(node.material)
+        ? node.material.map((material) => toStandardMaterial(material, keepTextures))
+        : toStandardMaterial(node.material, keepTextures)
+
       node.visible = true
       node.frustumCulled = false
-
-      if (node.userData?.origIndexBuffer && node.geometry) {
-        node.geometry.setIndex(node.userData.origIndexBuffer)
-      }
     }
+
+    // VRM helpers/managers can carry circular references and are runtime-only.
+    node.userData = {}
   })
 
   clone.updateMatrixWorld(true)
@@ -89,13 +114,27 @@ function exportBinaryGLB(model) {
 
 async function exportWithFallbacks(model) {
   const attempts = [
-    { label: "sanitized-skinned-clone", model: () => buildExportClone(model) },
-    { label: "live-scene", model: () => model },
+    {
+      label: "sanitized-skinned-clone-with-textures",
+      model: () => buildExportClone(model, { keepTextures: true }),
+    },
+    {
+      // Some avatar packs contain browser/CORS-hostile texture sources. Keep the
+      // full rig and geometry as a guaranteed motion-test fallback even if a
+      // particular texture cannot be serialized.
+      label: "sanitized-skinned-clone-no-textures",
+      model: () => buildExportClone(model, { keepTextures: false }),
+    },
+    {
+      label: "live-scene",
+      model: () => model,
+    },
   ]
 
   let lastError = null
   for (const attempt of attempts) {
     try {
+      emitStatus({ status: "working", strategy: attempt.label })
       console.info(`[Character2027] GLB export attempt: ${attempt.label}`)
       const buffer = await exportBinaryGLB(attempt.model())
       if (!buffer?.byteLength) throw new Error("Exporter returned an empty GLB")
@@ -109,21 +148,36 @@ async function exportWithFallbacks(model) {
 }
 
 CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
-  if (!this.canDownload()) {
-    const error = new Error("Download not supported.")
-    console.error("[Character2027] GLB export failed:", error)
+  const fileName = `${name && name !== "" ? name : "AvatarCreatorModel"}.glb`
+
+  if (!this.characterModel || this.characterModel.children.length === 0) {
+    const error = new Error("No assembled character is loaded to export.")
+    emitStatus({ status: "error", message: error.message })
     throw error
   }
 
-  const fileName = `${name && name !== "" ? name : "AvatarCreatorModel"}.glb`
+  // Preserve upstream manifest download policy. Surface the reason instead of
+  // silently doing nothing so a blocked asset cannot look like a broken button.
+  if (!this.canDownload()) {
+    const error = new Error("This avatar includes a manifest that does not permit downloading.")
+    console.error("[Character2027] GLB export blocked:", error)
+    emitStatus({ status: "blocked", message: error.message })
+    throw error
+  }
+
+  emitStatus({ status: "working", message: "Preparing GLB…" })
 
   try {
     const { buffer, strategy } = await exportWithFallbacks(this.characterModel)
     saveArrayBuffer(buffer, fileName)
-    console.info(`[Character2027] GLB exported: ${fileName} (${strategy}, ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB)`)
+    const sizeMB = (buffer.byteLength / 1024 / 1024).toFixed(2)
+    console.info(`[Character2027] GLB exported: ${fileName} (${strategy}, ${sizeMB} MB)`)
+    emitStatus({ status: "success", fileName, strategy, sizeMB })
     return buffer
   } catch (error) {
+    const message = error?.message || String(error)
     console.error("[Character2027] GLB export failed after all strategies:", error)
+    emitStatus({ status: "error", message })
     throw error
   }
 }
