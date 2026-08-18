@@ -2,6 +2,10 @@ import * as THREE from "three"
 
 export const MOTION_STATES = ["IDLE", "WALK", "STOP", "TURN_LEFT", "TURN_RIGHT"]
 
+const _direction = new THREE.Vector3()
+const _forward = new THREE.Vector3(0, 0, 1)
+const _desiredQuaternion = new THREE.Quaternion()
+
 export class MotionController {
   constructor(root) {
     this.root = root
@@ -10,6 +14,17 @@ export class MotionController {
     this.currentState = null
     this.currentAction = null
     this.fadeSeconds = 0.2
+
+    this.navigation = {
+      mode: "IDLE",
+      target: null,
+      facingTarget: null,
+      walkSpeed: 1.15,
+      turnSpeed: 8,
+      stopDistance: 0.08,
+      turnTolerance: THREE.MathUtils.degToRad(2),
+      onArrive: null,
+    }
   }
 
   setFadeSeconds(seconds) {
@@ -45,15 +60,87 @@ export class MotionController {
     if (this.currentAction === next) return
 
     next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play()
-    if (this.currentAction) {
-      this.currentAction.crossFadeTo(next, fadeSeconds, false)
-    }
+    if (this.currentAction) this.currentAction.crossFadeTo(next, fadeSeconds, false)
 
     this.currentAction = next
     this.currentState = state
   }
 
+  walkTo(target, options = {}) {
+    this.navigation.target = target.clone ? target.clone() : new THREE.Vector3(target.x, target.y, target.z)
+    this.navigation.target.y = this.root.position.y
+    this.navigation.walkSpeed = options.walkSpeed ?? this.navigation.walkSpeed
+    this.navigation.stopDistance = options.stopDistance ?? this.navigation.stopDistance
+    this.navigation.onArrive = options.onArrive ?? null
+    this.navigation.mode = "WALK_TO"
+    if (this.has("WALK")) this.transitionTo("WALK")
+  }
+
+  turnTo(target, options = {}) {
+    this.navigation.facingTarget = target.clone ? target.clone() : new THREE.Vector3(target.x, target.y, target.z)
+    this.navigation.facingTarget.y = this.root.position.y
+    this.navigation.turnSpeed = options.turnSpeed ?? this.navigation.turnSpeed
+    this.navigation.mode = "TURN_TO"
+  }
+
+  stop() {
+    this.navigation.target = null
+    this.navigation.facingTarget = null
+    this.navigation.mode = "IDLE"
+    if (this.has("STOP")) this.transitionTo("STOP")
+    else if (this.has("IDLE")) this.transitionTo("IDLE")
+  }
+
+  _rotateToward(target, delta) {
+    _direction.subVectors(target, this.root.position)
+    _direction.y = 0
+    if (_direction.lengthSq() < 1e-8) return 0
+    _direction.normalize()
+
+    _desiredQuaternion.setFromUnitVectors(_forward, _direction)
+    const angle = this.root.quaternion.angleTo(_desiredQuaternion)
+    const fraction = Math.min(1, (this.navigation.turnSpeed * delta) / Math.max(angle, 1e-5))
+    this.root.quaternion.slerp(_desiredQuaternion, fraction)
+    return angle
+  }
+
+  _updateNavigation(delta) {
+    if (this.navigation.mode === "WALK_TO" && this.navigation.target) {
+      const angle = this._rotateToward(this.navigation.target, delta)
+      _direction.subVectors(this.navigation.target, this.root.position)
+      _direction.y = 0
+      const distance = _direction.length()
+
+      if (distance <= this.navigation.stopDistance) {
+        const callback = this.navigation.onArrive
+        this.navigation.target = null
+        this.navigation.onArrive = null
+        this.navigation.mode = "IDLE"
+        if (this.has("STOP")) this.transitionTo("STOP")
+        else if (this.has("IDLE")) this.transitionTo("IDLE")
+        callback?.()
+        return
+      }
+
+      _direction.normalize()
+      const distanceScale = THREE.MathUtils.clamp(distance / 0.35, 0.2, 1)
+      const turnScale = THREE.MathUtils.clamp(1 - angle / Math.PI, 0.25, 1)
+      const step = Math.min(distance, this.navigation.walkSpeed * distanceScale * turnScale * delta)
+      this.root.position.addScaledVector(_direction, step)
+    }
+
+    if (this.navigation.mode === "TURN_TO" && this.navigation.facingTarget) {
+      const angle = this._rotateToward(this.navigation.facingTarget, delta)
+      if (angle <= this.navigation.turnTolerance) {
+        this.navigation.facingTarget = null
+        this.navigation.mode = "IDLE"
+        if (this.has("IDLE")) this.transitionTo("IDLE")
+      }
+    }
+  }
+
   update(delta) {
+    this._updateNavigation(delta)
     this.mixer.update(delta)
   }
 
