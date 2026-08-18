@@ -10,6 +10,9 @@ import { ViewProvider } from "./context/ViewContext"
 
 import { SoundProvider } from "./context/SoundContext"
 
+// Character 2027 Prototype 01: safe direct GLB exporter fallback.
+import "./library/glb-export-fix"
+
 // import i18n (needs to be bundled ;))
 import "./lib/localization/i18n"
 
