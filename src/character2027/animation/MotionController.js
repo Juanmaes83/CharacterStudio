@@ -5,6 +5,10 @@ export const MOTION_STATES = ["IDLE", "WALK", "STOP", "TURN_LEFT", "TURN_RIGHT"]
 const _direction = new THREE.Vector3()
 const _forward = new THREE.Vector3(0, 0, 1)
 const _desiredQuaternion = new THREE.Quaternion()
+const _turnStartQuaternion = new THREE.Quaternion()
+const _turnTargetQuaternion = new THREE.Quaternion()
+const _yawQuaternion = new THREE.Quaternion()
+const _worldUp = new THREE.Vector3(0, 1, 0)
 
 export class MotionController {
   constructor(root) {
@@ -15,6 +19,7 @@ export class MotionController {
     this.currentState = null
     this.currentAction = null
     this.fadeSeconds = 0.22
+    this.postProcessor = null
 
     this.navigation = {
       mode: "IDLE",
@@ -25,6 +30,9 @@ export class MotionController {
       stopDistance: 0.08,
       turnTolerance: THREE.MathUtils.degToRad(2),
       onArrive: null,
+      turnElapsed: 0,
+      turnDuration: 0.72,
+      turnOnComplete: null,
     }
 
     this._onFinished = (event) => {
@@ -37,6 +45,10 @@ export class MotionController {
       }
     }
     this.mixer.addEventListener("finished", this._onFinished)
+  }
+
+  setPostProcessor(processor) {
+    this.postProcessor = processor || null
   }
 
   setFadeSeconds(seconds) {
@@ -85,6 +97,7 @@ export class MotionController {
 
     this.currentAction = next
     this.currentState = state
+    this.postProcessor?.setState?.(state, next)
   }
 
   playAction(state, options = {}) {
@@ -108,6 +121,21 @@ export class MotionController {
     this.navigation.facingTarget.y = this.root.position.y
     this.navigation.turnSpeed = options.turnSpeed ?? this.navigation.turnSpeed
     this.navigation.mode = "TURN_TO"
+  }
+
+  turnBy(angleRadians, options = {}) {
+    _turnStartQuaternion.copy(this.root.quaternion)
+    _yawQuaternion.setFromAxisAngle(_worldUp, angleRadians)
+    _turnTargetQuaternion.copy(_turnStartQuaternion).premultiply(_yawQuaternion)
+    this.navigation.turnElapsed = 0
+    this.navigation.turnDuration = Math.max(0.18, options.duration ?? 0.72)
+    this.navigation.turnOnComplete = options.onComplete ?? null
+    this.navigation.mode = "TURN_BY"
+
+    const state = angleRadians >= 0
+      ? (this.has("TURN_LEFT_V2") ? "TURN_LEFT_V2" : (this.has("TURN_LEFT") ? "TURN_LEFT" : null))
+      : (this.has("TURN_RIGHT_V2") ? "TURN_RIGHT_V2" : (this.has("TURN_RIGHT") ? "TURN_RIGHT" : null))
+    if (state) this.transitionTo(state, 0.12)
   }
 
   stop() {
@@ -168,15 +196,32 @@ export class MotionController {
         if (idleState) this.transitionTo(idleState)
       }
     }
+
+    if (this.navigation.mode === "TURN_BY") {
+      this.navigation.turnElapsed += delta
+      const raw = THREE.MathUtils.clamp(this.navigation.turnElapsed / this.navigation.turnDuration, 0, 1)
+      const eased = raw * raw * (3 - 2 * raw)
+      this.root.quaternion.slerpQuaternions(_turnStartQuaternion, _turnTargetQuaternion, eased)
+      if (raw >= 1) {
+        const callback = this.navigation.turnOnComplete
+        this.navigation.turnOnComplete = null
+        this.navigation.mode = "IDLE"
+        const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
+        if (idleState) this.transitionTo(idleState, 0.14)
+        callback?.()
+      }
+    }
   }
 
   update(delta) {
     this._updateNavigation(delta)
     this.mixer.update(delta)
+    this.postProcessor?.update?.(delta, this.currentState, this.currentAction)
   }
 
   dispose() {
     this.mixer.removeEventListener("finished", this._onFinished)
+    this.postProcessor?.dispose?.()
     this.mixer.stopAllAction()
     this.mixer.uncacheRoot(this.root)
     this.actions.clear()
