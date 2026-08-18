@@ -33,6 +33,45 @@ export function resolveTargetBoneName(sourceBoneName, targetBoneNames) {
   return null
 }
 
+function sameSkeletonLayout(a, b) {
+  if (!a || !b || a.bones.length !== b.bones.length) return false
+  for (let i = 0; i < a.bones.length; i += 1) {
+    if (a.bones[i].name !== b.bones[i].name) return false
+  }
+  return true
+}
+
+export function unifyCompatibleSkeletons(root) {
+  const meshes = []
+  root?.traverse((node) => {
+    if (node.isSkinnedMesh && node.skeleton) meshes.push(node)
+  })
+
+  if (meshes.length < 2) {
+    return { skinnedMeshes: meshes.length, unifiedMeshes: 0, canonicalBoneCount: meshes[0]?.skeleton?.bones?.length || 0 }
+  }
+
+  const canonical = meshes[0].skeleton
+  let unifiedMeshes = 0
+
+  for (let i = 1; i < meshes.length; i += 1) {
+    const mesh = meshes[i]
+    if (!sameSkeletonLayout(canonical, mesh.skeleton)) continue
+    mesh.skeleton = canonical
+    unifiedMeshes += 1
+  }
+
+  canonical.pose()
+  canonical.update()
+  root.updateMatrixWorld(true)
+
+  return {
+    skinnedMeshes: meshes.length,
+    unifiedMeshes,
+    canonicalBoneCount: canonical.bones.length,
+  }
+}
+
 export function inspectHumanoid(root) {
   const boneNames = new Set()
   let skinnedMeshCount = 0
