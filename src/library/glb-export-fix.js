@@ -60,32 +60,69 @@ function toStandardMaterial(material, keepTextures = true) {
   return converted
 }
 
-function buildExportClone(model, { keepTextures = true } = {}) {
+function describeMaterial(material) {
+  if (Array.isArray(material)) return material.map((item) => item?.name || item?.type || "material").join(" + ")
+  return material?.name || material?.type || "material"
+}
+
+function collectMeshDescriptors(model) {
+  const descriptors = []
+  let meshIndex = 0
+  model?.traverse((node) => {
+    if (!node.isMesh) return
+    descriptors.push({
+      index: meshIndex,
+      name: node.name || `mesh-${meshIndex}`,
+      type: node.type,
+      material: describeMaterial(node.material),
+      vertexCount: node.geometry?.attributes?.position?.count || 0,
+      indexCount: node.geometry?.index?.count || 0,
+      morphTargets: Object.keys(node.geometry?.morphAttributes || {}).join(", ") || "none",
+      skinned: Boolean(node.isSkinnedMesh),
+      bones: node.skeleton?.bones?.length || 0,
+    })
+    meshIndex += 1
+  })
+  return descriptors
+}
+
+function buildExportClone(model, { keepTextures = true, omitMeshIndex = null } = {}) {
   // SkeletonUtils.clone preserves SkinnedMesh -> Skeleton -> Bone relationships
   // for modular avatars. Preserve the original index buffer BEFORE sanitizing
   // runtime-only userData.
   const clone = cloneSkinned(model)
   clone.name = "Character2027Export"
 
+  let meshIndex = 0
+  const toRemove = []
   clone.traverse((node) => {
-    const originalIndex = node.userData?.origIndexBuffer || null
-
-    if (node.isMesh) {
-      node.geometry = node.geometry?.clone?.() || node.geometry
-      if (originalIndex && node.geometry) node.geometry.setIndex(originalIndex)
-
-      node.material = Array.isArray(node.material)
-        ? node.material.map((material) => toStandardMaterial(material, keepTextures))
-        : toStandardMaterial(node.material, keepTextures)
-
-      node.visible = true
-      node.frustumCulled = false
+    if (!node.isMesh) {
+      node.userData = {}
+      return
     }
 
-    // VRM helpers/managers can carry circular references and are runtime-only.
+    const currentMeshIndex = meshIndex
+    meshIndex += 1
+
+    if (omitMeshIndex === currentMeshIndex) {
+      toRemove.push(node)
+      return
+    }
+
+    const originalIndex = node.userData?.origIndexBuffer || null
+    node.geometry = node.geometry?.clone?.() || node.geometry
+    if (originalIndex && node.geometry) node.geometry.setIndex(originalIndex)
+
+    node.material = Array.isArray(node.material)
+      ? node.material.map((material) => toStandardMaterial(material, keepTextures))
+      : toStandardMaterial(node.material, keepTextures)
+
+    node.visible = true
+    node.frustumCulled = false
     node.userData = {}
   })
 
+  toRemove.forEach((node) => node.parent?.remove(node))
   clone.updateMatrixWorld(true)
   return clone
 }
@@ -112,6 +149,48 @@ function exportBinaryGLB(model) {
   })
 }
 
+async function diagnoseFailingMesh(model, originalError) {
+  const descriptors = collectMeshDescriptors(model)
+  const suspects = []
+  const maxTrials = Math.min(descriptors.length, 24)
+
+  emitStatus({
+    status: "diagnosing",
+    message: `GLB failed. Testing ${maxTrials} avatar parts to isolate the incompatible asset…`,
+  })
+
+  for (let i = 0; i < maxTrials; i += 1) {
+    const descriptor = descriptors[i]
+    try {
+      const diagnosticClone = buildExportClone(model, {
+        keepTextures: false,
+        omitMeshIndex: descriptor.index,
+      })
+      const buffer = await exportBinaryGLB(diagnosticClone)
+      if (buffer?.byteLength) {
+        suspects.push(descriptor)
+        console.warn("[Character2027] GLB culprit candidate isolated:", descriptor)
+      }
+    } catch {
+      // Expected for non-culprit omissions: the problematic asset is still present.
+    }
+  }
+
+  const diagnostic = {
+    originalError: originalError?.message || String(originalError),
+    meshCount: descriptors.length,
+    tested: maxTrials,
+    suspects,
+  }
+
+  console.group("[Character2027] GLB export diagnostic")
+  console.table(descriptors)
+  if (suspects.length) console.table(suspects)
+  console.groupEnd()
+
+  return diagnostic
+}
+
 async function exportWithFallbacks(model) {
   const attempts = [
     {
@@ -120,8 +199,8 @@ async function exportWithFallbacks(model) {
     },
     {
       // Some avatar packs contain browser/CORS-hostile texture sources. Keep the
-      // full rig and geometry as a guaranteed motion-test fallback even if a
-      // particular texture cannot be serialized.
+      // full rig and geometry as a motion-test fallback even if a texture cannot
+      // be serialized.
       label: "sanitized-skinned-clone-no-textures",
       model: () => buildExportClone(model, { keepTextures: false }),
     },
@@ -132,6 +211,7 @@ async function exportWithFallbacks(model) {
   ]
 
   let lastError = null
+  const errors = []
   for (const attempt of attempts) {
     try {
       emitStatus({ status: "working", strategy: attempt.label })
@@ -141,10 +221,14 @@ async function exportWithFallbacks(model) {
       return { buffer, strategy: attempt.label }
     } catch (error) {
       lastError = error
+      errors.push({ strategy: attempt.label, message: error?.message || String(error) })
       console.warn(`[Character2027] ${attempt.label} failed`, error)
     }
   }
-  throw lastError || new Error("GLB export failed")
+
+  const failure = lastError || new Error("GLB export failed")
+  failure.character2027Attempts = errors
+  throw failure
 }
 
 CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
@@ -175,9 +259,25 @@ CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
     emitStatus({ status: "success", fileName, strategy, sizeMB })
     return buffer
   } catch (error) {
-    const message = error?.message || String(error)
     console.error("[Character2027] GLB export failed after all strategies:", error)
-    emitStatus({ status: "error", message })
+
+    const diagnostic = await diagnoseFailingMesh(this.characterModel, error)
+    const suspects = diagnostic.suspects || []
+    const culpritText = suspects.length
+      ? suspects.map((item) => `${item.name} [${item.material}]`).join("; ")
+      : "No single mesh isolated; failure may be shared skeleton/geometry state."
+
+    emitStatus({
+      status: "diagnostic-error",
+      message: error?.message || String(error),
+      suspects,
+      culpritText,
+      tested: diagnostic.tested,
+      meshCount: diagnostic.meshCount,
+      attempts: error.character2027Attempts || [],
+    })
+
+    error.character2027Diagnostic = diagnostic
     throw error
   }
 }
