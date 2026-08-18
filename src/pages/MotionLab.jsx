@@ -14,6 +14,7 @@ const ui = {
   page: { position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "340px 1fr", background: "#111", color: "#eee", fontFamily: "Inter, system-ui, sans-serif" },
   panel: { padding: 18, overflowY: "auto", borderRight: "1px solid #333", background: "#171717" },
   stage: { position: "relative", minWidth: 0 },
+  canvas: { width: "100%", height: "100%", display: "block" },
   title: { fontSize: 20, fontWeight: 700, marginBottom: 4 },
   subtitle: { fontSize: 12, opacity: 0.65, marginBottom: 18, lineHeight: 1.4 },
   section: { marginTop: 18, paddingTop: 16, borderTop: "1px solid #333" },
@@ -45,11 +46,11 @@ async function loadAnimationFile(file) {
     const root = await loadObjectURL(file, loaderFBX)
     return { root, clips: root.animations || [] }
   }
-  if (ext === "glb" || ext === "gltf") {
+  if (ext === "glb" || ext === "gltf" || ext === "vrm") {
     const gltf = await loadObjectURL(file, loaderGLTF)
     return { root: gltf.scene, clips: gltf.animations || [] }
   }
-  throw new Error("Animation must be .fbx, .glb or .gltf")
+  throw new Error("Animation must be .fbx, .glb, .gltf or .vrm")
 }
 
 export default function MotionLab() {
@@ -134,6 +135,9 @@ export default function MotionLab() {
   const loadAvatar = async (file) => {
     setError("")
     try {
+      const ext = file.name.split(".").pop()?.toLowerCase()
+      if (!["glb", "gltf", "vrm"].includes(ext)) throw new Error("Avatar must be .glb, .gltf or .vrm")
+
       const gltf = await loadObjectURL(file, loaderGLTF)
       const root = gltf.scene
       root.traverse((node) => {
@@ -178,7 +182,7 @@ export default function MotionLab() {
   const loadMotion = async (motionState, file) => {
     setError("")
     if (!avatarRef.current || !controllerRef.current) {
-      setError("Load a target avatar GLB first")
+      setError("Load a target avatar GLB/VRM first")
       return
     }
 
@@ -218,10 +222,10 @@ export default function MotionLab() {
     <div style={ui.page}>
       <aside style={ui.panel}>
         <div style={ui.title}>CHARACTER 2027 — MOTION LAB</div>
-        <div style={ui.subtitle}>Vertical slice: GLB → rig validation → external animation → retarget → deterministic motion states.</div>
+        <div style={ui.subtitle}>Vertical slice: GLB/VRM → rig validation → external animation → retarget → deterministic motion states.</div>
 
-        <label style={ui.label}>1. TARGET AVATAR (.glb recommended)</label>
-        <input style={ui.input} type="file" accept=".glb,.gltf" onChange={(e) => e.target.files?.[0] && loadAvatar(e.target.files[0])} />
+        <label style={ui.label}>1. TARGET AVATAR (.glb recommended, .vrm accepted)</label>
+        <input style={ui.input} type="file" accept=".glb,.gltf,.vrm" onChange={(e) => e.target.files?.[0] && loadAvatar(e.target.files[0])} />
 
         <div style={ui.section}>
           <div style={ui.label}>Avatar</div>
@@ -238,11 +242,11 @@ export default function MotionLab() {
         </div>
 
         <div style={ui.section}>
-          <div style={ui.label}>2. MOTION SLOTS (.fbx / .glb / .gltf)</div>
+          <div style={ui.label}>2. MOTION SLOTS (.fbx / .glb / .gltf / .vrm)</div>
           {MOTION_STATES.map((motionState) => (
             <div key={motionState} style={{ marginBottom: 11 }}>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>{motionState}</div>
-              <input style={ui.input} type="file" accept=".fbx,.glb,.gltf" onChange={(e) => e.target.files?.[0] && loadMotion(motionState, e.target.files[0])} />
+              <input style={ui.input} type="file" accept=".fbx,.glb,.gltf,.vrm" onChange={(e) => e.target.files?.[0] && loadMotion(motionState, e.target.files[0])} />
               <button
                 style={{ ...ui.button, ...(state === motionState ? ui.activeButton : {}), opacity: slotReports[motionState] ? 1 : 0.4 }}
                 disabled={!slotReports[motionState]}
