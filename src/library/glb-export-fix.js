@@ -1,4 +1,6 @@
+import * as THREE from "three"
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter"
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js"
 import { CharacterManager } from "./characterManager"
 
 function saveArrayBuffer(buffer, filename) {
@@ -11,7 +13,56 @@ function saveArrayBuffer(buffer, filename) {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+function toStandardMaterial(material) {
+  if (!material) return new THREE.MeshStandardMaterial({ color: 0xffffff })
+  if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) return material.clone()
+
+  const color = material.color?.clone?.() || material.uniforms?.litFactor?.value?.clone?.() || new THREE.Color(0xffffff)
+  const converted = new THREE.MeshStandardMaterial({
+    name: material.name || "Character2027_Material",
+    color,
+    map: material.map || material.uniforms?.map?.value || material.uniforms?.mainTex?.value || null,
+    normalMap: material.normalMap || null,
+    roughness: Number.isFinite(material.roughness) ? material.roughness : 0.8,
+    metalness: Number.isFinite(material.metalness) ? material.metalness : 0,
+    transparent: Boolean(material.transparent),
+    opacity: Number.isFinite(material.opacity) ? material.opacity : 1,
+    side: material.side ?? THREE.FrontSide,
+  })
+  converted.alphaTest = material.alphaTest || 0
+  return converted
+}
+
+function buildExportClone(model) {
+  // SkeletonUtils.clone preserves SkinnedMesh -> Skeleton -> Bone relationships,
+  // unlike Object3D.clone() for modular avatars with repeated skins.
+  const clone = cloneSkinned(model)
+  clone.name = "Character2027Export"
+
+  clone.traverse((node) => {
+    // VRM helpers/managers can carry circular references in userData. They are
+    // runtime-only and must not be serialized into the GLB.
+    node.userData = {}
+
+    if (node.isMesh) {
+      node.geometry = node.geometry?.clone?.() || node.geometry
+      node.material = Array.isArray(node.material)
+        ? node.material.map(toStandardMaterial)
+        : toStandardMaterial(node.material)
+      node.visible = true
+      node.frustumCulled = false
+
+      if (node.userData?.origIndexBuffer && node.geometry) {
+        node.geometry.setIndex(node.userData.origIndexBuffer)
+      }
+    }
+  })
+
+  clone.updateMatrixWorld(true)
+  return clone
 }
 
 function exportBinaryGLB(model) {
@@ -20,10 +71,7 @@ function exportBinaryGLB(model) {
     exporter.parse(
       model,
       (result) => {
-        if (result instanceof ArrayBuffer) {
-          resolve(result)
-          return
-        }
+        if (result instanceof ArrayBuffer) return resolve(result)
         reject(new Error("GLTFExporter returned JSON instead of binary GLB data."))
       },
       (error) => reject(error instanceof Error ? error : new Error(String(error))),
@@ -39,20 +87,27 @@ function exportBinaryGLB(model) {
   })
 }
 
-/**
- * CHARACTER 2027 hotfix
- *
- * The upstream optimized GLB route is currently broken because downloadGLB()
- * calls getOptimizedGLB(model, options), while getOptimizedGLB expects
- * (model, avatar, options). That shifts the arguments and leaves `options`
- * undefined inside the optimizer.
- *
- * For Prototype 01 we prefer a correct, inspectable GLB over a broken optimized
- * export. This patch exports the live assembled CharacterStudio scene directly,
- * preserving the real skinned meshes / skeleton hierarchy. VRM export remains
- * untouched. Once the optimized exporter is repaired and covered by tests this
- * compatibility patch can be removed.
- */
+async function exportWithFallbacks(model) {
+  const attempts = [
+    { label: "sanitized-skinned-clone", model: () => buildExportClone(model) },
+    { label: "live-scene", model: () => model },
+  ]
+
+  let lastError = null
+  for (const attempt of attempts) {
+    try {
+      console.info(`[Character2027] GLB export attempt: ${attempt.label}`)
+      const buffer = await exportBinaryGLB(attempt.model())
+      if (!buffer?.byteLength) throw new Error("Exporter returned an empty GLB")
+      return { buffer, strategy: attempt.label }
+    } catch (error) {
+      lastError = error
+      console.warn(`[Character2027] ${attempt.label} failed`, error)
+    }
+  }
+  throw lastError || new Error("GLB export failed")
+}
+
 CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
   if (!this.canDownload()) {
     const error = new Error("Download not supported.")
@@ -63,13 +118,12 @@ CharacterManager.prototype.downloadGLB = async function downloadGLBFixed(name) {
   const fileName = `${name && name !== "" ? name : "AvatarCreatorModel"}.glb`
 
   try {
-    console.info("[Character2027] Exporting direct binary GLB fallback…")
-    const glb = await exportBinaryGLB(this.characterModel)
-    saveArrayBuffer(glb, fileName)
-    console.info(`[Character2027] GLB exported: ${fileName}`)
-    return glb
+    const { buffer, strategy } = await exportWithFallbacks(this.characterModel)
+    saveArrayBuffer(buffer, fileName)
+    console.info(`[Character2027] GLB exported: ${fileName} (${strategy}, ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB)`)
+    return buffer
   } catch (error) {
-    console.error("[Character2027] GLB export failed:", error)
+    console.error("[Character2027] GLB export failed after all strategies:", error)
     throw error
   }
 }
