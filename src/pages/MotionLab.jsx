@@ -6,15 +6,15 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import { inspectHumanoid, unifyCompatibleSkeletons } from "../character2027/rig/BoneMap"
 import { retargetClipToCharacter } from "../character2027/animation/Retargeter"
 import { MotionController, MOTION_STATES } from "../character2027/animation/MotionController"
+import { registerBaselineMotionSet } from "../character2027/animation/ProceduralMotionLibrary"
 
 const loaderGLTF = new GLTFLoader()
 const loaderFBX = new FBXLoader()
 
 const ui = {
-  page: { position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "340px 1fr", background: "#111", color: "#eee", fontFamily: "Inter, system-ui, sans-serif" },
+  page: { position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "360px 1fr", background: "#111", color: "#eee", fontFamily: "Inter, system-ui, sans-serif" },
   panel: { padding: 18, overflowY: "auto", borderRight: "1px solid #333", background: "#171717" },
   stage: { position: "relative", minWidth: 0 },
-  canvas: { width: "100%", height: "100%", display: "block" },
   title: { fontSize: 20, fontWeight: 700, marginBottom: 4 },
   subtitle: { fontSize: 12, opacity: 0.65, marginBottom: 18, lineHeight: 1.4 },
   section: { marginTop: 18, paddingTop: 16, borderTop: "1px solid #333" },
@@ -66,6 +66,8 @@ export default function MotionLab() {
   const [skeletonReport, setSkeletonReport] = useState(null)
   const [state, setState] = useState(null)
   const [slotReports, setSlotReports] = useState({})
+  const [baselineReady, setBaselineReady] = useState(false)
+  const [navStatus, setNavStatus] = useState("Not tested")
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -94,13 +96,20 @@ export default function MotionLab() {
     key.castShadow = true
     scene.add(key)
 
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(4, 64),
-      new THREE.MeshStandardMaterial({ color: 0x242424, roughness: 0.9 }),
-    )
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 64), new THREE.MeshStandardMaterial({ color: 0x242424, roughness: 0.9 }))
     floor.rotation.x = -Math.PI / 2
     floor.receiveShadow = true
     scene.add(floor)
+
+    const markerMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x222222 })
+    const leftMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), markerMaterial)
+    leftMarker.name = "MotionLabTargetLeft"
+    leftMarker.position.set(-1.35, 0.06, 0.65)
+    scene.add(leftMarker)
+    const rightMarker = leftMarker.clone()
+    rightMarker.name = "MotionLabTargetRight"
+    rightMarker.position.set(1.35, 0.06, 0.65)
+    scene.add(rightMarker)
 
     sceneRef.current = scene
 
@@ -135,9 +144,6 @@ export default function MotionLab() {
   const loadAvatar = async (file) => {
     setError("")
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase()
-      if (!["glb", "gltf", "vrm"].includes(ext)) throw new Error("Avatar must be .glb, .gltf or .vrm")
-
       const gltf = await loadObjectURL(file, loaderGLTF)
       const root = gltf.scene
       root.traverse((node) => {
@@ -152,25 +158,23 @@ export default function MotionLab() {
 
       const box = new THREE.Box3().setFromObject(root)
       const size = box.getSize(new THREE.Vector3())
-      const height = Math.max(size.y, 0.0001)
-      const desiredHeight = 1.75
-      root.scale.multiplyScalar(desiredHeight / height)
+      root.scale.multiplyScalar(1.75 / Math.max(size.y, 0.0001))
       root.updateMatrixWorld(true)
-
       const scaledBox = new THREE.Box3().setFromObject(root)
-      const scaledCenter = scaledBox.getCenter(new THREE.Vector3())
-      root.position.x -= scaledCenter.x
-      root.position.z -= scaledCenter.z
+      const center = scaledBox.getCenter(new THREE.Vector3())
+      root.position.x -= center.x
+      root.position.z -= center.z
       root.position.y -= scaledBox.min.y
       root.updateMatrixWorld(true)
 
       const normalizedSkeletons = unifyCompatibleSkeletons(root)
-
       sceneRef.current.add(root)
       avatarRef.current = root
       controllerRef.current = new MotionController(root)
       setSlotReports({})
       setState(null)
+      setBaselineReady(false)
+      setNavStatus("Not tested")
       setAvatarName(file.name)
       setSkeletonReport(normalizedSkeletons)
       setRigReport(inspectHumanoid(root))
@@ -179,26 +183,32 @@ export default function MotionLab() {
     }
   }
 
+  const loadBaseline = () => {
+    setError("")
+    if (!avatarRef.current || !controllerRef.current) return setError("Load a target avatar first")
+    try {
+      const reports = registerBaselineMotionSet(controllerRef.current, avatarRef.current)
+      setSlotReports((prev) => ({ ...prev, ...reports }))
+      controllerRef.current.transitionTo("IDLE")
+      setState("IDLE")
+      setBaselineReady(true)
+      setNavStatus("Motion set loaded")
+    } catch (e) {
+      setError(`Baseline motion failed: ${e.message || e}`)
+    }
+  }
+
   const loadMotion = async (motionState, file) => {
     setError("")
-    if (!avatarRef.current || !controllerRef.current) {
-      setError("Load a target avatar GLB/VRM first")
-      return
-    }
-
+    if (!avatarRef.current || !controllerRef.current) return setError("Load a target avatar first")
     try {
       const { root, clips } = await loadAnimationFile(file)
       const sourceClip = clips.find((clip) => clip.name === "mixamo.com") || clips[0]
       if (!sourceClip) throw new Error("No animation clip found in file")
-
       const { clip, report } = retargetClipToCharacter(root, sourceClip, avatarRef.current)
       clip.name = motionState
       controllerRef.current.register(motionState, clip)
-      setSlotReports((previous) => ({
-        ...previous,
-        [motionState]: { file: file.name, duration: clip.duration, ...report },
-      }))
-
+      setSlotReports((previous) => ({ ...previous, [motionState]: { file: file.name, duration: clip.duration, ...report } }))
       if (!state) {
         controllerRef.current.transitionTo(motionState)
         setState(motionState)
@@ -218,55 +228,73 @@ export default function MotionLab() {
     }
   }
 
+  const walkTo = (name, target) => {
+    if (!controllerRef.current) return setError("Load an avatar first")
+    setNavStatus(`Walking to ${name}…`)
+    controllerRef.current.walkTo(new THREE.Vector3(...target), {
+      walkSpeed: 0.8,
+      stopDistance: 0.08,
+      onArrive: () => setNavStatus(`ARRIVED: ${name}`),
+    })
+    setState("WALK")
+  }
+
+  const turnToCenter = () => {
+    if (!controllerRef.current) return setError("Load an avatar first")
+    setNavStatus("Turning to centre…")
+    controllerRef.current.turnTo(new THREE.Vector3(0, 0, 0), { turnSpeed: 5 })
+  }
+
   return (
     <div style={ui.page}>
       <aside style={ui.panel}>
         <div style={ui.title}>CHARACTER 2027 — MOTION LAB</div>
-        <div style={ui.subtitle}>Vertical slice: GLB/VRM → rig validation → external animation → retarget → deterministic motion states.</div>
+        <div style={ui.subtitle}>Gate to Rope: avatar → motion states → deterministic walkTo/turnTo → second-avatar repeat.</div>
 
-        <label style={ui.label}>1. TARGET AVATAR (.glb recommended, .vrm accepted)</label>
+        <label style={ui.label}>1. TARGET AVATAR (.glb / .gltf / .vrm)</label>
         <input style={ui.input} type="file" accept=".glb,.gltf,.vrm" onChange={(e) => e.target.files?.[0] && loadAvatar(e.target.files[0])} />
 
         <div style={ui.section}>
           <div style={ui.label}>Avatar</div>
           <div style={ui.pre}>{avatarName}</div>
-          {rigReport && (
-            <div style={{ marginTop: 9 }}>
-              <span style={ui.badge}>{rigReport.pass ? "RIG PASS" : "RIG REVIEW"}</span>
-              <span style={ui.badge}>{rigReport.boneCount} unique bone names</span>
-              <span style={ui.badge}>{rigReport.skinnedMeshCount} skinned meshes</span>
-              {skeletonReport && <span style={ui.badge}>{skeletonReport.unifiedMeshes}/{Math.max(skeletonReport.skinnedMeshes - 1, 0)} extra skins unified</span>}
-              {rigReport.missing.length > 0 && <div style={ui.pre}>Missing: {rigReport.missing.join(", ")}</div>}
-            </div>
-          )}
+          {rigReport && <div style={{ marginTop: 9 }}>
+            <span style={ui.badge}>{rigReport.pass ? "RIG PASS" : "RIG REVIEW"}</span>
+            <span style={ui.badge}>{rigReport.boneCount} unique bone names</span>
+            <span style={ui.badge}>{rigReport.skinnedMeshCount} skinned meshes</span>
+            {skeletonReport && <span style={ui.badge}>{skeletonReport.unifiedMeshes}/{Math.max(skeletonReport.skinnedMeshes - 1, 0)} extra skins unified</span>}
+            {rigReport.missing.length > 0 && <div style={ui.pre}>Missing: {rigReport.missing.join(", ")}</div>}
+          </div>}
         </div>
 
         <div style={ui.section}>
-          <div style={ui.label}>2. MOTION SLOTS (.fbx / .glb / .gltf / .vrm)</div>
-          {MOTION_STATES.map((motionState) => (
-            <div key={motionState} style={{ marginBottom: 11 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>{motionState}</div>
-              <input style={ui.input} type="file" accept=".fbx,.glb,.gltf,.vrm" onChange={(e) => e.target.files?.[0] && loadMotion(motionState, e.target.files[0])} />
-              <button
-                style={{ ...ui.button, ...(state === motionState ? ui.activeButton : {}), opacity: slotReports[motionState] ? 1 : 0.4 }}
-                disabled={!slotReports[motionState]}
-                onClick={() => playState(motionState)}
-              >
-                {slotReports[motionState] ? `▶ ${motionState} — ${slotReports[motionState].file}` : `${motionState} — not loaded`}
-              </button>
-            </div>
-          ))}
+          <div style={ui.label}>2. ONE-CLICK BASELINE MOTION</div>
+          <button style={ui.button} onClick={loadBaseline}>LOAD IDLE + WALK + STOP + TURN</button>
+          <div style={ui.pre}>{baselineReady ? "READY — validate all five states visually" : "Not loaded"}</div>
+          {MOTION_STATES.map((motionState) => <button key={motionState} style={{ ...ui.button, ...(state === motionState ? ui.activeButton : {}), opacity: slotReports[motionState] ? 1 : 0.4 }} disabled={!slotReports[motionState]} onClick={() => playState(motionState)}>
+            {slotReports[motionState] ? `▶ ${motionState}` : `${motionState} — not loaded`}
+          </button>)}
         </div>
 
         <div style={ui.section}>
-          <div style={ui.label}>3. RETARGET REPORT</div>
-          <div style={ui.pre}>
-            {state && slotReports[state]
-              ? JSON.stringify(slotReports[state], null, 2)
-              : "Load an animation to inspect mapped tracks and hips scale."}
-          </div>
+          <div style={ui.label}>3. LOCOMOTION GATE</div>
+          <button style={ui.button} disabled={!baselineReady} onClick={() => walkTo("LEFT TARGET", [-1.35, 0, 0.65])}>WALK TO LEFT TARGET</button>
+          <button style={ui.button} disabled={!baselineReady} onClick={() => walkTo("RIGHT TARGET", [1.35, 0, 0.65])}>WALK TO RIGHT TARGET</button>
+          <button style={ui.button} disabled={!baselineReady} onClick={turnToCenter}>TURN TO CENTRE</button>
+          <div style={ui.pre}>Status: {navStatus}</div>
         </div>
 
+        <div style={ui.section}>
+          <div style={ui.label}>4. OPTIONAL EXTERNAL RETARGET</div>
+          {MOTION_STATES.map((motionState) => <div key={motionState} style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700 }}>{motionState}</div>
+            <input style={ui.input} type="file" accept=".fbx,.glb,.gltf,.vrm" onChange={(e) => e.target.files?.[0] && loadMotion(motionState, e.target.files[0])} />
+          </div>)}
+        </div>
+
+        <div style={ui.section}>
+          <div style={ui.label}>5. REPORT</div>
+          <div style={ui.pre}>{state && slotReports[state] ? JSON.stringify(slotReports[state], null, 2) : "Load the baseline or an external animation."}</div>
+        </div>
         {error && <div style={{ ...ui.section, ...ui.error }}>{error}</div>}
       </aside>
       <main ref={mountRef} style={ui.stage} />
