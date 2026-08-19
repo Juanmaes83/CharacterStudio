@@ -11,6 +11,76 @@ const _turnTargetQuaternion = new THREE.Quaternion()
 const _yawQuaternion = new THREE.Quaternion()
 const _worldUp = new THREE.Vector3(0, 1, 0)
 
+function worldPoint(object, local = new THREE.Vector3()) {
+  if (!object) return null
+  object.updateWorldMatrix(true, false)
+  return object.localToWorld(local.clone())
+}
+
+function benchmarkInteractionTarget(root, state) {
+  const scene = root?.parent
+  if (!scene) return null
+  const byName = (name) => scene.getObjectByName(name)
+
+  if (state === "PRESS_DOORBELL") {
+    const object = byName("BenchmarkDoorbell")
+    return object ? { object, hand: "right", contactPoint: worldPoint(object), type: "precise-contact" } : null
+  }
+  if (state === "KNOCK_DOOR") {
+    const object = byName("BenchmarkDoor")
+    return object ? { object, hand: "right", contactPoint: worldPoint(object, new THREE.Vector3(-0.03, 0.32, 0.08)), type: "repeated-contact" } : null
+  }
+  if (state === "PICK_UP_CUP") {
+    const object = byName("BenchmarkCup")
+    return object ? { object, hand: "right", contactPoint: worldPoint(object), gripPoint: worldPoint(object, new THREE.Vector3(0.045, 0.01, 0)), type: "small-one-hand" } : null
+  }
+  if (state === "PICK_UP_PHONE") {
+    const object = byName("BenchmarkPhone")
+    return object ? { object, hand: "right", secondaryHand: "left", contactPoint: worldPoint(object), gripPoint: worldPoint(object), type: "phone-grip" } : null
+  }
+  if (state === "PICK_UP_MAGAZINE") {
+    const object = byName("BenchmarkMagazine")
+    return object ? {
+      object,
+      hand: "right",
+      secondaryHand: "left",
+      contactPoint: worldPoint(object),
+      gripPoint: worldPoint(object, new THREE.Vector3(0.09, 0, -0.04)),
+      secondaryGripPoint: worldPoint(object, new THREE.Vector3(-0.09, 0, -0.04)),
+      type: "two-hand-flat-object",
+    } : null
+  }
+  if (state === "OPEN_DOOR") {
+    const object = byName("BenchmarkDoor")
+    const handle = byName("BenchmarkDoorHandle")
+    const doorPivot = byName("BenchmarkDoorHinge")
+    return object && handle && doorPivot ? { object, handle, doorPivot, hand: "right", contactPoint: worldPoint(handle), type: "handle-grip" } : null
+  }
+  if (state === "SIT_SOFA") {
+    const object = byName("BenchmarkSofaSeat")
+    return object ? {
+      object,
+      seatPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)),
+      contactPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)),
+      footLeft: worldPoint(object, new THREE.Vector3(-0.18, -0.22, 0.54)),
+      footRight: worldPoint(object, new THREE.Vector3(0.18, -0.22, 0.54)),
+      type: "full-body-seat",
+    } : null
+  }
+  if (state === "LEAN_WALL") {
+    const object = byName("BenchmarkWall")
+    return object ? {
+      object,
+      contactPoint: worldPoint(object, new THREE.Vector3(-0.05, -0.05, 0)),
+      pelvisContact: worldPoint(object, new THREE.Vector3(-0.06, -0.24, 0)),
+      shoulderContact: worldPoint(object, new THREE.Vector3(-0.06, 0.32, 0)),
+      surfaceNormal: new THREE.Vector3(-1, 0, 0),
+      type: "surface-contact-pose",
+    } : null
+  }
+  return null
+}
+
 export class MotionController {
   constructor(root) {
     this.root = root
@@ -41,9 +111,7 @@ export class MotionController {
       const options = this.actionOptions.get(this.currentState) || {}
       let recoverTo = options.recoverTo
       if (recoverTo === undefined) recoverTo = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
-      if (recoverTo && this.has(recoverTo) && recoverTo !== this.currentState) {
-        this.transitionTo(recoverTo, 0.24)
-      }
+      if (recoverTo && this.has(recoverTo) && recoverTo !== this.currentState) this.transitionTo(recoverTo, 0.24)
     }
     this.mixer.addEventListener("finished", this._onFinished)
   }
@@ -64,15 +132,12 @@ export class MotionController {
       previous.stop()
       this.mixer.uncacheAction(previous.getClip(), this.root)
     }
-
     const loop = options.loop ?? (state === "IDLE" || state === "WALK")
     const clamp = options.clamp ?? !loop
-    const repetitions = loop ? Infinity : 1
-
     const action = this.mixer.clipAction(clip)
     action.enabled = true
     action.clampWhenFinished = clamp
-    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, repetitions)
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
     this.actions.set(state, action)
     this.actionOptions.set(state, {
       loop,
@@ -110,6 +175,8 @@ export class MotionController {
     this.currentAction = next
     this.currentState = state
     this.postProcessor?.setState?.(state, next)
+    const interactionTarget = benchmarkInteractionTarget(this.root, state)
+    if (interactionTarget) this.postProcessor?.setInteraction?.(state, interactionTarget)
 
     if (this.navigation.mode !== "TURN_BY") {
       if (state === "TURN_LEFT_V2" || state === "TURN_LEFT") this._prepareTurnBy(Math.PI / 2, { duration: next.getClip().duration })
