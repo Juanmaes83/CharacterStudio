@@ -1,4 +1,5 @@
 import { HumanoidIKController } from "./HumanoidIKController"
+import { applyTerrainSemanticIK, clearTerrainSemanticMemory } from "./TerrainSemanticIK"
 
 const CLIP_OWNED_STATES = new Set([
   "WALK_V2",
@@ -11,14 +12,22 @@ const CLIP_OWNED_STATES = new Set([
   "AFTER_YOU",
 ])
 
+const SEMANTIC_TERRAIN_STATES = new Set([
+  "STEP_UP",
+  "STEP_DOWN",
+  "STAIRS_UP",
+  "STAIRS_DOWN",
+  "LADDER_UP",
+  "LADDER_DOWN",
+])
+
 /**
  * Character 2027 contact/adaptation IK.
  *
  * Locomotion and social gesture biomechanics are owned by their animation clips.
- * IK must not synthesize a second gait or replace the authored shoulder/elbow
- * choreography of a social gesture. Contact/adaptation IK remains active for
- * jump, terrain and semantic object interactions where a real world target is
- * part of the behaviour contract.
+ * Terrain states are different: they bind to actual world geometry and own a
+ * semantic root/contact trajectory. The generic procedural terrain pose is not
+ * allowed to run underneath that binding.
  */
 export class ContactIKController extends HumanoidIKController {
   update(delta, state, action) {
@@ -30,8 +39,21 @@ export class ContactIKController extends HumanoidIKController {
       return
     }
 
+    if (SEMANTIC_TERRAIN_STATES.has(state)) {
+      if (state !== this.state) this.setState(state, action)
+      this.stateTime += delta
+      // Ladder contact is applied after the mixer by LadderIKExtension using
+      // real BenchmarkLadder rungs. Step/stairs are solved here.
+      if (state !== "LADDER_UP" && state !== "LADDER_DOWN") {
+        applyTerrainSemanticIK(this, state, action)
+      }
+      return
+    }
+
+    if (this._terrainSemantic) clearTerrainSemanticMemory(this)
     super.update(delta, state, action)
   }
 }
 
 export const CHARACTER_CLIP_OWNED_STATES = CLIP_OWNED_STATES
+export const CHARACTER_SEMANTIC_TERRAIN_STATES = SEMANTIC_TERRAIN_STATES
