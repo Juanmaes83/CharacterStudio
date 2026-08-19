@@ -34,7 +34,7 @@
     "@web3-react/injected-connector": "^6.0.7",
     "@web3-react/network-connector": "^6.1.9",
     "axios": "^1.13.6",
-    "bs58": "^6.0.3",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "ethers": "^5.7.0",
     "events": "^3.3.0",
@@ -59,7 +59,6 @@
     "three-mesh-bvh": "^0.9.9",
     "use-sound": "^5.0.0",
     "vite-plugin-mkcert": "^1.17.10",
-    "vite-react-jsx": "1.1.2",
     "wrangler": "^4.72.0",
     "zustand": "^3.5.10"
   },
@@ -80,7 +79,7 @@
     "svgo": "^3.3.3",
     "webpack": "^5.104.1",
     "webpack-dev-server": "^5.2.1",
-    "flatted": "^3.4.0",
+    "flatted": "^4.0.0",
     "bn.js": "^5.2.3",
     "ajv": "^8.18.0",
     "aptos": {
