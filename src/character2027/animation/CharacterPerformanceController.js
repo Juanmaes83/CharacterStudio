@@ -26,8 +26,8 @@ export class CharacterPerformanceController {
     return result
   }
 
-  play(name, { fade = 0.28, loop = LOOP_RE.test(name), timeScale = 1 } = {}) {
-    this.sequenceToken += 1
+  play(name, { fade = 0.28, loop = LOOP_RE.test(name), timeScale = 1, preserveSequence = false } = {}) {
+    if (!preserveSequence) this.sequenceToken += 1
     const { clip, report } = this.getRetargeted(name)
     const next = this.mixer.clipAction(clip)
     next.enabled = true
@@ -57,6 +57,7 @@ export class CharacterPerformanceController {
         fade: step.fade ?? 0.18,
         loop: step.loop ?? false,
         timeScale: step.timeScale ?? 1,
+        preserveSequence: true,
       })
       const seconds = step.seconds ?? (result.clip.duration / Math.max(step.timeScale ?? 1, 0.001))
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, seconds - (step.overlap ?? 0.08)) * 1000))
