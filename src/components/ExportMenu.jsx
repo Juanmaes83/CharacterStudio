@@ -1,4 +1,4 @@
-import React, { useContext } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { SceneContext } from "../context/SceneContext"
 import CustomButton from "./custom-button"
 
@@ -15,8 +15,44 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
   // Translate hook
   const { t } = useContext(LanguageContext);
   const [name] = React.useState(localStorage.getItem("name") || defaultName)
+  const [glbStatus, setGlbStatus] = useState("")
+  const [glbBusy, setGlbBusy] = useState(false)
   const { model, characterManager } = useContext(SceneContext)
 
+  useEffect(() => {
+    const onStatus = (event) => {
+      const detail = event.detail || {}
+      if (detail.status === "working") {
+        setGlbBusy(true)
+        setGlbStatus(detail.message || `Exporting GLB… ${detail.strategy || ""}`)
+      }
+      if (detail.status === "diagnosing") {
+        setGlbBusy(true)
+        setGlbStatus(detail.message || "GLB failed. Isolating the incompatible avatar part…")
+      }
+      if (detail.status === "success") {
+        setGlbBusy(false)
+        setGlbStatus(`GLB ready: ${detail.fileName} · ${detail.sizeMB} MB`)
+      }
+      if (detail.status === "blocked") {
+        setGlbBusy(false)
+        setGlbStatus(`GLB blocked: ${detail.message}`)
+      }
+      if (detail.status === "diagnostic-error") {
+        setGlbBusy(false)
+        const prefix = detail.suspects?.length
+          ? `GLB culprit candidate: ${detail.culpritText}`
+          : `GLB diagnostic: ${detail.culpritText}`
+        setGlbStatus(`${prefix} · tested ${detail.tested}/${detail.meshCount} meshes`)
+      }
+      if (detail.status === "error") {
+        setGlbBusy(false)
+        setGlbStatus(`GLB failed: ${detail.message}`)
+      }
+    }
+    window.addEventListener("character2027:glb-export", onStatus)
+    return () => window.removeEventListener("character2027:glb-export", onStatus)
+  }, [])
 
   const getOptions = () =>{
     const currentOption = local["mergeOptions_sel_option"] || 0;
@@ -44,14 +80,34 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
     characterManager.downloadVRM(name, options);
   }
   
-  const downloadGLB = () =>{
+  const downloadGLB = async () =>{
+    if (glbBusy) return
     const options = getOptions();
-    characterManager.downloadGLB(name, options);
+    setGlbBusy(true)
+    setGlbStatus("Preparing GLB…")
+    try {
+      await characterManager.downloadGLB(name, options);
+    } catch (error) {
+      setGlbBusy(false)
+      const diagnostic = error?.character2027Diagnostic
+      if (diagnostic) {
+        const suspects = diagnostic.suspects || []
+        const culpritText = suspects.length
+          ? suspects.map((item) => `${item.name} [${item.material}]`).join("; ")
+          : "No single mesh isolated; failure may be shared skeleton/geometry state."
+        setGlbStatus(`GLB diagnostic: ${culpritText} · tested ${diagnostic.tested}/${diagnostic.meshCount} meshes`)
+      } else {
+        setGlbStatus(`GLB failed: ${error?.message || error}`)
+      }
+    }
   }
 
   const purchaseAssets = () =>{
     onPurchaseClick();
   }
+
+  const statusIsSuccess = glbStatus.startsWith("GLB ready")
+  const statusIsFailure = glbStatus.startsWith("GLB failed") || glbStatus.startsWith("GLB blocked") || glbStatus.startsWith("GLB diagnostic") || glbStatus.startsWith("GLB culprit")
 
   return (
     <React.Fragment>
@@ -59,14 +115,23 @@ export const ExportMenu = ({currentPrice, onPurchaseClick}) => {
         <>
           <CustomButton
             theme="light"
-            text="GLB"
+            text={glbBusy ? "EXPORTING…" : "GLB"}
             icon="download"
             size={14}
             className={styles.button}
-            onClick={() => {
-              downloadGLB();
-            }}
+            onClick={downloadGLB}
           />
+          {glbStatus && (
+            <div style={{
+              marginTop: 6,
+              maxWidth: 320,
+              fontSize: 11,
+              lineHeight: 1.35,
+              color: statusIsSuccess ? "#7ee787" : statusIsFailure ? "#ff9b9b" : "#d0d0d0",
+            }}>
+              {glbStatus}
+            </div>
+          )}
           <CustomButton
             theme="light"
             text="VRM 0"
