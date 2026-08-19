@@ -23,7 +23,10 @@ function getTargetHipsHeight(targetRoot) {
 }
 
 function getSourceHipsHeight(sourceRoot) {
-  const hips = findSourceBone(sourceRoot, "mixamorigHips") || sourceRoot.getObjectByName("hips")
+  const hips =
+    findSourceBone(sourceRoot, "mixamorigHips") ||
+    sourceRoot.getObjectByName("DEF-hips") ||
+    sourceRoot.getObjectByName("hips")
   if (!hips) return 1
   const hipsY = hips.getWorldPosition(_vec).y
   const rootY = sourceRoot.getWorldPosition(_vec).y
