@@ -33,3 +33,28 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install Playwright
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Playwright Character 2027 browser verification
+        run: |
+          npm run dev > /tmp/character2027-vite.log 2>&1 &
+          echo $! > /tmp/character2027-vite.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5174/e2e-social.html >/dev/null; then break; fi
+            sleep 1
+          done
+          python tests/e2e/character2027_social_playwright.py
+
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: character2027-playwright-evidence
+          path: |
+            artifacts/*.png
+            /tmp/character2027-vite.log
+          if-no-files-found: ignore
