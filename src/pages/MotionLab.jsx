@@ -12,6 +12,7 @@ import { registerMotionFoundationV2Extra, V2_EXTRA_VERTICAL } from "../character
 import { createInteractionBenchmarks } from "../character2027/interaction/InteractionBenchmarks"
 import { LookAtController } from "../character2027/interaction/LookAtController"
 import { CharacterActionAPI } from "../character2027/api/CharacterActionAPI"
+import { runMotionLabFoundationAction } from "../character2027/lab/MotionLabLocomotion"
 
 const loaderGLTF = new GLTFLoader()
 const loaderFBX = new FBXLoader()
@@ -204,8 +205,10 @@ export default function MotionLab() {
 
   const playState = (motionState) => {
     setError("")
-    try { actionApiRef.current?.perform(motionState) }
-    catch (e) { setError(e.message || String(e)) }
+    if (!actionApiRef.current || !avatarRef.current) return setError("Load an avatar first")
+    try {
+      runMotionLabFoundationAction({ action: motionState, root: avatarRef.current, actionApi: actionApiRef.current })
+    } catch (e) { setError(e.message || String(e)) }
   }
 
   const walkTo = (name, target) => {
