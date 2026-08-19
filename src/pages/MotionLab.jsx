@@ -11,6 +11,7 @@ import { registerMotionFoundationV2, V2_GROUPS } from "../character2027/animatio
 import { registerMotionFoundationV2Extra, V2_EXTRA_VERTICAL } from "../character2027/animation/MotionFoundationV2Extra"
 import { createInteractionBenchmarks } from "../character2027/interaction/InteractionBenchmarks"
 import { LookAtController } from "../character2027/interaction/LookAtController"
+import { CharacterActionAPI } from "../character2027/api/CharacterActionAPI"
 
 const loaderGLTF = new GLTFLoader()
 const loaderFBX = new FBXLoader()
@@ -58,6 +59,7 @@ export default function MotionLab() {
   const avatarRef = useRef(null)
   const controllerRef = useRef(null)
   const lookAtRef = useRef(null)
+  const actionApiRef = useRef(null)
   const benchmarksRef = useRef(null)
   const frameRef = useRef(null)
   const clockRef = useRef(new THREE.Clock())
@@ -124,7 +126,7 @@ export default function MotionLab() {
 
     return () => {
       cancelAnimationFrame(frameRef.current); window.removeEventListener("resize", resize)
-      controllerRef.current?.dispose(); controls.dispose(); renderer.dispose()
+      actionApiRef.current?.dispose(); controllerRef.current?.dispose(); controls.dispose(); renderer.dispose()
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
   }, [])
@@ -136,6 +138,7 @@ export default function MotionLab() {
       const root = gltf.scene
       root.traverse((node) => { if (node.isMesh) { node.castShadow = true; node.receiveShadow = true } })
       if (avatarRef.current) sceneRef.current.remove(avatarRef.current)
+      actionApiRef.current?.dispose()
       controllerRef.current?.dispose()
 
       const box = new THREE.Box3().setFromObject(root)
@@ -152,6 +155,14 @@ export default function MotionLab() {
       avatarRef.current = root
       controllerRef.current = new MotionController(root)
       lookAtRef.current = new LookAtController(root)
+      actionApiRef.current = new CharacterActionAPI({
+        root,
+        controller: controllerRef.current,
+        lookAt: lookAtRef.current,
+        interactionTargets: benchmarksRef.current?.targets,
+        onStateChange: setState,
+        onStatus: setNavStatus,
+      })
       setSlotReports({}); setState(null); setBaselineReady(false); setV2Ready(false); setNavStatus("Not tested")
       setAvatarName(file.name); setSkeletonReport(normalizedSkeletons); setRigReport(inspectHumanoid(root))
     } catch (e) { setError(`Avatar load failed: ${e.message || e}`) }
@@ -193,46 +204,31 @@ export default function MotionLab() {
 
   const playState = (motionState) => {
     setError("")
-    try { lookAtRef.current?.clear(); controllerRef.current?.playAction(motionState); setState(motionState) }
+    try { actionApiRef.current?.perform(motionState) }
     catch (e) { setError(e.message || String(e)) }
   }
 
   const walkTo = (name, target) => {
-    if (!controllerRef.current) return setError("Load an avatar first")
-    setNavStatus(`Walking to ${name}…`)
-    if (v2Ready && controllerRef.current.has("WALK_V2")) controllerRef.current.transitionTo("WALK_V2")
-    controllerRef.current.navigation.target = new THREE.Vector3(...target)
-    controllerRef.current.navigation.target.y = avatarRef.current.position.y
-    controllerRef.current.navigation.walkSpeed = 0.78
-    controllerRef.current.navigation.stopDistance = 0.08
-    controllerRef.current.navigation.onArrive = () => { setNavStatus(`ARRIVED: ${name}`); if (v2Ready) controllerRef.current.transitionTo("STOP_V2") }
-    controllerRef.current.navigation.mode = "WALK_TO"
-    setState(v2Ready ? "WALK_V2" : "WALK")
+    setError("")
+    if (!actionApiRef.current) return setError("Load an avatar first")
+    try {
+      actionApiRef.current.moveTo(target, { label: name, walkSpeed: 0.78, stopDistance: 0.08 })
+    } catch (e) { setError(e.message || String(e)) }
   }
 
   const playInteraction = (name) => {
-    const target = benchmarksRef.current?.targets?.[name]
-    if (!target || !controllerRef.current || !avatarRef.current) return
-    setNavStatus(`${name}: approaching semantic target…`)
-    lookAtRef.current?.lookAt(target.lookAt, { weight: 0.9 })
-    controllerRef.current.navigation.target = target.approachPoint.clone()
-    controllerRef.current.navigation.target.y = avatarRef.current.position.y
-    controllerRef.current.navigation.walkSpeed = 0.72
-    controllerRef.current.navigation.stopDistance = 0.12
-    controllerRef.current.navigation.mode = "WALK_TO"
-    if (controllerRef.current.has("WALK_V2")) controllerRef.current.transitionTo("WALK_V2")
-    controllerRef.current.navigation.onArrive = () => {
-      controllerRef.current.turnTo(target.lookAt, { turnSpeed: 6 })
-      lookAtRef.current?.lookAt(target.lookAt, { weight: 1 })
-      setTimeout(() => { controllerRef.current?.playAction(name); setState(name); setNavStatus(`${name}: benchmark action`) }, 260)
-    }
-    setState("WALK_V2")
+    setError("")
+    if (!actionApiRef.current) return setError("Load an avatar first")
+    try { actionApiRef.current.interact(name) }
+    catch (e) { setError(e.message || String(e)) }
   }
 
   const targetLookAt = () => {
-    if (!lookAtRef.current) return setError("Load avatar first")
-    const point = new THREE.Vector3(1.4, 1.45, -1.3)
-    lookAtRef.current.lookAt(point, { weight: 1 }); setNavStatus("Target-aware lookAt active")
+    setError("")
+    if (!actionApiRef.current) return setError("Load avatar first")
+    try {
+      actionApiRef.current.lookAt(new THREE.Vector3(1.4, 1.45, -1.3), { weight: 1, status: "Target-aware lookAt active" })
+    } catch (e) { setError(e.message || String(e)) }
   }
 
   const actionButtons = (actions) => <div style={ui.group}>{actions.map(name => <button key={name} style={{ ...ui.button, ...(state === name ? ui.activeButton : {}) }} disabled={!v2Ready} onClick={() => playState(name)}>{name}</button>)}</div>
