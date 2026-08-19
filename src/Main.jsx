@@ -15,6 +15,7 @@ import "./lib/localization/i18n"
 
 import App from "./App"
 import MotionLab from "./pages/MotionLab"
+import DonorMotionLab from "./pages/DonorMotionLab"
 import { LanguageProvider } from "./context/LanguageContext"
 import "./library/glb-export-fix"
 
@@ -24,11 +25,19 @@ const getLibrary = (provider) => {
   return library
 }
 
-const isMotionLab = window.location.pathname === "/motion-lab" || window.location.pathname.endsWith("/motion-lab/")
+const pathname = window.location.pathname
+const isMotionLab = pathname === "/motion-lab" || pathname.endsWith("/motion-lab/")
+const isDonorMotionLab = pathname === "/donor-motion-lab" || pathname.endsWith("/donor-motion-lab/")
 
 const root = ReactDOM.createRoot(document.getElementById("root"))
 
-if (isMotionLab) {
+if (isDonorMotionLab) {
+  root.render(
+    <React.StrictMode>
+      <DonorMotionLab />
+    </React.StrictMode>,
+  )
+} else if (isMotionLab) {
   root.render(
     <React.StrictMode>
       <MotionLab />
