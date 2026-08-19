@@ -1,0 +1,54 @@
+name: Vendor Quaternius Motion Donor
+
+on:
+  push:
+    branches:
+      - agent/character-2027-donor-clone-01
+    paths:
+      - '.github/workflows/vendor-quaternius-motion.yml'
+      - 'scripts/build-quaternius-manifest.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor-motion-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CharacterStudio donor branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/character-2027-donor-clone-01
+
+      - name: Download pinned Quaternius animation payload only
+        shell: bash
+        run: |
+          set -euo pipefail
+          DONOR_COMMIT='e24c23cf2a1323488a3faa226ea7ea21f644b73e'
+          BASE="https://raw.githubusercontent.com/J-Ponzo/gltf-universal-animation-library/${DONOR_COMMIT}"
+          DEST='public/vendor/quaternius-u-a-l'
+          mkdir -p "$DEST"
+          curl --fail --location --retry 3 "$BASE/glTF/AnimationLibrary_Godot_Standard.gltf" -o "$DEST/AnimationLibrary_Godot_Standard.gltf"
+          curl --fail --location --retry 3 "$BASE/glTF/AnimationLibrary_Godot_Standard.bin" -o "$DEST/AnimationLibrary_Godot_Standard.bin"
+          curl --fail --location --retry 3 "$BASE/LICENSE" -o "$DEST/LICENSE"
+          test -s "$DEST/AnimationLibrary_Godot_Standard.gltf"
+          test -s "$DEST/AnimationLibrary_Godot_Standard.bin"
+          echo "$DONOR_COMMIT" > "$DEST/DONOR_COMMIT.txt"
+
+      - name: Build donor clip manifest without modifying animation data
+        run: node scripts/build-quaternius-manifest.mjs
+
+      - name: Commit vendored movement payload and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/vendor/quaternius-u-a-l
+          if git diff --cached --quiet; then
+            echo 'Pinned donor payload already current.'
+            exit 0
+          fi
+          git commit -m 'vendor(character2027): sync pinned Quaternius motion assets'
+          git push origin HEAD:agent/character-2027-donor-clone-01

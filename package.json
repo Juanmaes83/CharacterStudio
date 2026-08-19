@@ -5,7 +5,7 @@
   "scripts": {
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
-    "dev": "vite --host",
+    "dev": "vite --host --port 5174 --strictPort",
     "build": "vite build",
     "serve": "vite preview",
     "test": "vitest",
@@ -59,7 +59,6 @@
     "three-mesh-bvh": "^0.9.9",
     "use-sound": "^5.0.0",
     "vite-plugin-mkcert": "^1.17.10",
-    "vite-react-jsx": "1.1.2",
     "wrangler": "^4.72.0",
     "zustand": "^3.5.10"
   },
@@ -80,7 +79,7 @@
     "svgo": "^3.3.3",
     "webpack": "^5.104.1",
     "webpack-dev-server": "^5.2.1",
-    "flatted": "^3.4.0",
+    "flatted": "^3.4.2",
     "bn.js": "^5.2.3",
     "ajv": "^8.18.0",
     "aptos": {
@@ -96,7 +95,7 @@
     "classnames": "^2.3.2",
     "eslint": "^8.30.0",
     "eslint-config-prettier": "^8.5.0",
-    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-no-inline-styles": "^1.0.5",
     "eslint-plugin-react": "^7.31.11",
     "gh-pages": "^6.1.1",

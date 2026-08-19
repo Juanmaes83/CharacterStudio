@@ -14,7 +14,10 @@ import { SoundProvider } from "./context/SoundContext"
 import "./lib/localization/i18n"
 
 import App from "./App"
+import MotionLab from "./pages/MotionLab"
+import DonorMotionLab from "./pages/DonorMotionLab"
 import { LanguageProvider } from "./context/LanguageContext"
+import "./library/glb-export-fix"
 
 const getLibrary = (provider) => {
   const library = new Web3Provider(provider)
@@ -22,24 +25,44 @@ const getLibrary = (provider) => {
   return library
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Web3ReactProvider getLibrary={getLibrary}>
-      <AccountProvider>
-        <LanguageProvider>
-          <AudioProvider>
-            <ViewProvider>
-              <SceneProvider>
-                <SoundProvider>
-                  <Suspense>
-                    <App />
-                  </Suspense>
-                </SoundProvider>
-              </SceneProvider>
-            </ViewProvider>
-          </AudioProvider>
-        </LanguageProvider>
-      </AccountProvider>
-    </Web3ReactProvider>
-  </React.StrictMode>,
-)
+const pathname = window.location.pathname
+const isMotionLab = pathname === "/motion-lab" || pathname.endsWith("/motion-lab/")
+const isDonorMotionLab = pathname === "/donor-motion-lab" || pathname.endsWith("/donor-motion-lab/")
+
+const root = ReactDOM.createRoot(document.getElementById("root"))
+
+if (isDonorMotionLab) {
+  root.render(
+    <React.StrictMode>
+      <DonorMotionLab />
+    </React.StrictMode>,
+  )
+} else if (isMotionLab) {
+  root.render(
+    <React.StrictMode>
+      <MotionLab />
+    </React.StrictMode>,
+  )
+} else {
+  root.render(
+    <React.StrictMode>
+      <Web3ReactProvider getLibrary={getLibrary}>
+        <AccountProvider>
+          <LanguageProvider>
+            <AudioProvider>
+              <ViewProvider>
+                <SceneProvider>
+                  <SoundProvider>
+                    <Suspense>
+                      <App />
+                    </Suspense>
+                  </SoundProvider>
+                </SceneProvider>
+              </ViewProvider>
+            </AudioProvider>
+          </LanguageProvider>
+        </AccountProvider>
+      </Web3ReactProvider>
+    </React.StrictMode>,
+  )
+}
