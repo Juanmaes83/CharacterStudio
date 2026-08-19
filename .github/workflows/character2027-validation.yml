@@ -44,10 +44,11 @@ jobs:
           npm run dev > /tmp/character2027-vite.log 2>&1 &
           echo $! > /tmp/character2027-vite.pid
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:5174/e2e-social.html >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:5174/e2e-social.html >/dev/null && curl -fsS http://127.0.0.1:5174/e2e-terrain.html >/dev/null; then break; fi
             sleep 1
           done
           python tests/e2e/character2027_social_playwright.py
+          python tests/e2e/character2027_terrain_playwright.py
 
       - name: Upload Playwright evidence
         if: always()
