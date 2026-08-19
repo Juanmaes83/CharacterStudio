@@ -3,6 +3,8 @@ import { MotionController } from "../animation/MotionController"
 import { registerMotionFoundationV2 } from "../animation/MotionFoundationV2"
 import { registerMotionFoundationV2Extra } from "../animation/MotionFoundationV2Extra"
 import { createInteractionBenchmarks } from "../interaction/InteractionBenchmarks"
+import { CharacterActionAPI } from "../api/CharacterActionAPI"
+import { runMotionLabFoundationAction } from "../lab/MotionLabLocomotion"
 
 function bone(name, position) {
   const b = new THREE.Bone()
@@ -58,6 +60,16 @@ function run(controller, name, fraction = 0.96) {
   return controller.root.position.clone()
 }
 
+function runNavigation(controller, maxSeconds = 5) {
+  const step = 1 / 60
+  let elapsed = 0
+  while (elapsed < maxSeconds && controller.navigation.mode !== "IDLE") {
+    controller.update(step)
+    elapsed += step
+  }
+  return elapsed
+}
+
 const scene = new THREE.Scene()
 createInteractionBenchmarks(scene)
 const root = buildHumanoid()
@@ -65,8 +77,28 @@ scene.add(root)
 const controller = new MotionController(root)
 registerMotionFoundationV2(controller, root)
 registerMotionFoundationV2Extra(controller, root)
+const actionApi = new CharacterActionAPI({ root, controller })
 
 const report = []
+const walkStart = root.position.clone()
+const walkDispatch = runMotionLabFoundationAction({ action: "WALK_V2", root, actionApi, walkDistance: 1.35 })
+runNavigation(controller)
+const walkEnd = root.position.clone()
+report.push({
+  action: "WALK_V2_BUTTON",
+  mode: walkDispatch.mode,
+  start: walkStart.toArray(),
+  position: walkEnd.toArray(),
+  distance: walkStart.distanceTo(walkEnd),
+  navigationMode: controller.navigation.mode,
+  pass: walkDispatch.mode === "moveTo" && walkStart.distanceTo(walkEnd) > 1.15 && controller.navigation.mode === "IDLE",
+})
+root.position.copy(walkStart)
+root.quaternion.identity()
+controller.navigation.mode = "IDLE"
+controller.navigation.target = null
+controller.transitionTo("IDLE_V2", 0)
+
 const start = root.position.clone()
 const stepUp = run(controller, "STEP_UP")
 report.push({ action: "STEP_UP", position: stepUp.toArray(), pass: stepUp.y > start.y + 0.14 && Math.abs(stepUp.x + 0.55) < 0.30 })
@@ -99,9 +131,10 @@ report.push({ action: "LADDER_DOWN", position: ladderDown.toArray(), pass: ladde
 const pass = report.every((item) => item.pass)
 const resultNode = document.getElementById("result")
 const reportNode = document.getElementById("report")
-resultNode.textContent = pass ? "PASS — TERRAIN IS BOUND TO WORLD GEOMETRY" : "FAIL — TERRAIN SEMANTIC REGRESSION"
+resultNode.textContent = pass ? "PASS — WALK + TERRAIN USE WORLD-SPACE MOVEMENT" : "FAIL — LOCOMOTION/TERRAIN REGRESSION"
 resultNode.dataset.status = pass ? "pass" : "fail"
 resultNode.className = pass ? "pass" : "fail"
 reportNode.textContent = JSON.stringify(report, null, 2)
 window.__CHARACTER2027_TERRAIN_E2E__ = { pass, report }
+actionApi.dispose()
 controller.dispose()
