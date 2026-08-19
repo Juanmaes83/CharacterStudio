@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import { HumanoidIKController } from "../ik/HumanoidIKController"
+import { ContactIKController } from "../ik/ContactIKController"
 import { applyLadderIK } from "../ik/LadderIKExtension"
 
 export const MOTION_STATES = ["IDLE", "WALK", "STOP", "TURN_LEFT", "TURN_RIGHT"]
@@ -54,7 +54,7 @@ export class MotionController {
     this.currentState = null
     this.currentAction = null
     this.fadeSeconds = 0.22
-    this.postProcessor = new HumanoidIKController(root)
+    this.postProcessor = new ContactIKController(root)
     this.navigation = { mode: "IDLE", target: null, facingTarget: null, walkSpeed: 1.15, turnSpeed: 8, stopDistance: 0.08, turnTolerance: THREE.MathUtils.degToRad(2), preTurnTolerance: THREE.MathUtils.degToRad(8), preTurnThreshold: THREE.MathUtils.degToRad(32), onArrive: null, turnElapsed: 0, turnDuration: 0.72, turnOnComplete: null }
     this._onFinished = (event) => {
       if (event.action !== this.currentAction) return
