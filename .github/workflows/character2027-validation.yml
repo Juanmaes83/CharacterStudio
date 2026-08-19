@@ -1,0 +1,32 @@
+name: Character 2027 Validation
+
+on:
+  push:
+    branches:
+      - agent/character-2027-prototype-01
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Human hinge tests
+        run: npx vitest run tests/unit/character2027-human-hinge.test.js
+
+      - name: Full tests
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
