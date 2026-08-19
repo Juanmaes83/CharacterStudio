@@ -1,51 +1,83 @@
 import * as THREE from "three"
+import { getTerrainSemanticDescriptor } from "../interaction/TerrainSemanticBenchmarks"
 
-const _q = new THREE.Quaternion()
+const _forward = new THREE.Vector3(0, 0, 1)
+const _direction = new THREE.Vector3()
+const _desiredQuaternion = new THREE.Quaternion()
 
-function worldDir(root, local, out = new THREE.Vector3()) {
-  root.getWorldQuaternion(_q)
-  return out.copy(local).applyQuaternion(_q).normalize()
+function smooth01(value) {
+  const x = THREE.MathUtils.clamp(value, 0, 1)
+  return x * x * (3 - 2 * x)
 }
 
-function worldPos(object, out = new THREE.Vector3()) {
-  object.updateWorldMatrix(true, false)
-  return object.getWorldPosition(out)
+function phase(value, start, end) {
+  return smooth01((value - start) / Math.max(end - start, 1e-5))
+}
+
+function rungTarget(point, xOffset) {
+  return point.clone().add(new THREE.Vector3(xOffset, 0, -0.015))
 }
 
 export function applyLadderIK(controller, state, action) {
   if (!controller || (state !== "LADDER_UP" && state !== "LADDER_DOWN")) return
+  const descriptor = getTerrainSemanticDescriptor(controller.root, state)
+  if (!descriptor?.rungPoints?.length) return
+
   const duration = action?.getClip?.()?.duration || 1
-  const t = duration > 0 ? ((action?.time || 0) / duration) % 1 : 0
-  const direction = state === "LADDER_UP" ? 1 : -1
+  const t = THREE.MathUtils.clamp((action?.time || 0) / Math.max(duration, 1e-5), 0, 1)
+  const up = state === "LADDER_UP"
   const root = controller.root
-  const chest = controller.chest || root
-  const hips = controller.hips || root
-  const chestPos = worldPos(chest)
-  const hipsPos = worldPos(hips)
-  const forward = worldDir(root, new THREE.Vector3(0, 0, 1))
-  const right = worldDir(root, new THREE.Vector3(1, 0, 0))
 
-  // Cross-lateral climbing pattern: opposite hand/foot pairs alternate every half-cycle.
-  const firstHalf = t < 0.5
-  const phase = firstHalf ? t * 2 : (t - 0.5) * 2
-  const lift = Math.sin(Math.PI * THREE.MathUtils.clamp(phase, 0, 1))
-  const reachY = 0.28 * direction
-  const footY = 0.20 * direction
+  if (controller._ladderSemantic?.state !== state) {
+    controller._ladderSemantic = {
+      state,
+      rootStart: root.position.clone(),
+      rootStartQuaternion: root.quaternion.clone(),
+    }
+  }
+  const memory = controller._ladderSemantic
+  const rungs = descriptor.rungPoints.slice().sort((a, b) => a.y - b.y)
+  const ladderCentre = rungs[Math.floor(rungs.length / 2)].clone()
 
-  const leftHand = chestPos.clone().addScaledVector(right, -0.34).addScaledVector(forward, 0.28)
-  const rightHand = chestPos.clone().addScaledVector(right, 0.34).addScaledVector(forward, 0.28)
-  leftHand.y += firstHalf ? reachY * lift + 0.24 : 0.06
-  rightHand.y += firstHalf ? 0.06 : reachY * lift + 0.24
+  // Phase 1: orient and approach the physical ladder. Phase 2: ascend/descend
+  // the real rung field. The root trajectory is spatial, not an in-place pose.
+  _direction.set(ladderCentre.x - root.position.x, 0, ladderCentre.z - root.position.z)
+  if (_direction.lengthSq() > 1e-8) {
+    _direction.normalize()
+    _desiredQuaternion.setFromUnitVectors(_forward, _direction)
+    root.quaternion.slerpQuaternions(memory.rootStartQuaternion, _desiredQuaternion, phase(t, 0, 0.20))
+  }
 
-  const leftFoot = hipsPos.clone().addScaledVector(right, -0.18).addScaledVector(forward, 0.18)
-  const rightFoot = hipsPos.clone().addScaledVector(right, 0.18).addScaledVector(forward, 0.18)
-  leftFoot.y -= 0.62
-  rightFoot.y -= 0.62
-  leftFoot.y += firstHalf ? 0.02 : footY * lift
-  rightFoot.y += firstHalf ? footY * lift : 0.02
+  const approach = phase(t, 0, 0.22)
+  const climb = phase(t, 0.18, 0.96)
+  const ladderZ = ladderCentre.z - 0.30
+  root.position.x = THREE.MathUtils.lerp(memory.rootStart.x, ladderCentre.x, approach)
+  root.position.z = THREE.MathUtils.lerp(memory.rootStart.z, ladderZ, approach)
 
-  controller.solveChain(controller.chains.leftArm, leftHand, controller.chains.leftArm?.bendPoleLocal, 0.98)
-  controller.solveChain(controller.chains.rightArm, rightHand, controller.chains.rightArm?.bendPoleLocal, 0.98)
-  controller.solveChain(controller.chains.leftLeg, leftFoot, controller.chains.leftLeg?.bendPoleLocal, 0.99)
-  controller.solveChain(controller.chains.rightLeg, rightFoot, controller.chains.rightLeg?.bendPoleLocal, 0.99)
+  const rungSpan = Math.max(0.56, rungs[rungs.length - 1].y - rungs[0].y)
+  const climbDistance = Math.min(1.12, rungSpan * 0.78)
+  const targetY = up ? memory.rootStart.y + climbDistance : Math.max(0, memory.rootStart.y - climbDistance)
+  root.position.y = THREE.MathUtils.lerp(memory.rootStart.y, targetY, climb)
+  root.updateWorldMatrix(true, true)
+
+  const progress = up ? climb : 1 - climb
+  const maxBase = Math.max(0, rungs.length - 4)
+  const baseIndex = Math.min(maxBase, Math.max(0, Math.floor(progress * (maxBase + 0.999))))
+  const rhythm = Math.sin(t * Math.PI * 4)
+  const leftLead = rhythm >= 0
+
+  const footLow = rungs[Math.min(baseIndex, rungs.length - 1)]
+  const footHigh = rungs[Math.min(baseIndex + 1, rungs.length - 1)]
+  const handLow = rungs[Math.min(baseIndex + 2, rungs.length - 1)]
+  const handHigh = rungs[Math.min(baseIndex + 3, rungs.length - 1)]
+
+  const leftFoot = rungTarget(leftLead ? footHigh : footLow, -0.16)
+  const rightFoot = rungTarget(leftLead ? footLow : footHigh, 0.16)
+  const leftHand = rungTarget(leftLead ? handHigh : handLow, -0.24)
+  const rightHand = rungTarget(leftLead ? handLow : handHigh, 0.24)
+
+  controller.solveChain(controller.chains.leftArm, leftHand, controller.chains.leftArm?.preferredBendLocal, 0.99)
+  controller.solveChain(controller.chains.rightArm, rightHand, controller.chains.rightArm?.preferredBendLocal, 0.99)
+  controller.solveChain(controller.chains.leftLeg, leftFoot, controller.chains.leftLeg?.preferredBendLocal, 0.995)
+  controller.solveChain(controller.chains.rightLeg, rightFoot, controller.chains.rightLeg?.preferredBendLocal, 0.995)
 }
