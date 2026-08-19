@@ -1,0 +1,558 @@
+{
+  "schema": "character2027.quaternius-motion-manifest.v1",
+  "source": {
+    "repository": "J-Ponzo/gltf-universal-animation-library",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "donorCommit": "e24c23cf2a1323488a3faa226ea7ea21f644b73e",
+    "asset": "glTF/AnimationLibrary_Godot_Standard.gltf"
+  },
+  "immutableSourcePolicy": true,
+  "animationCount": 46,
+  "animations": [
+    {
+      "index": 0,
+      "name": "A_TPose",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 1,
+      "name": "Crouch_Fwd_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "CROUCH"
+    },
+    {
+      "index": 2,
+      "name": "Crouch_Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 3,
+      "name": "Dance_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 4,
+      "name": "Death01",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 5,
+      "name": "Driving_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 6,
+      "name": "Fixing_Kneeling",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "KNEEL"
+    },
+    {
+      "index": 7,
+      "name": "Hit_Chest",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 8,
+      "name": "Hit_Head",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 9,
+      "name": "Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 10,
+      "name": "Idle_Talking_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 11,
+      "name": "Idle_Torch_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 12,
+      "name": "Interact",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 13,
+      "name": "Jog_Fwd_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "RUN"
+    },
+    {
+      "index": 14,
+      "name": "Jump_Land",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "JUMP"
+    },
+    {
+      "index": 15,
+      "name": "Jump_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "JUMP"
+    },
+    {
+      "index": 16,
+      "name": "Jump_Start",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "JUMP"
+    },
+    {
+      "index": 17,
+      "name": "PickUp_Table",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "PICKUP"
+    },
+    {
+      "index": 18,
+      "name": "Pistol_Aim_Down",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 19,
+      "name": "Pistol_Aim_Neutral",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 20,
+      "name": "Pistol_Aim_Up",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 21,
+      "name": "Pistol_Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 22,
+      "name": "Pistol_Reload",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 23,
+      "name": "Pistol_Shoot",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 24,
+      "name": "Punch_Cross",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 25,
+      "name": "Punch_Enter",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 26,
+      "name": "Punch_Jab",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 27,
+      "name": "Push_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 28,
+      "name": "Roll",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 29,
+      "name": "Roll_RM",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 30,
+      "name": "Sitting_Enter",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "SIT"
+    },
+    {
+      "index": 31,
+      "name": "Sitting_Exit",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "SIT"
+    },
+    {
+      "index": 32,
+      "name": "Sitting_Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 33,
+      "name": "Sitting_Talking_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "SIT"
+    },
+    {
+      "index": 34,
+      "name": "Spell_Simple_Enter",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 35,
+      "name": "Spell_Simple_Exit",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 36,
+      "name": "Spell_Simple_Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 37,
+      "name": "Spell_Simple_Shoot",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 38,
+      "name": "Sprint_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 39,
+      "name": "Swim_Fwd_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 40,
+      "name": "Swim_Idle_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 41,
+      "name": "Sword_Attack",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 42,
+      "name": "Sword_Attack_RM",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "OTHER"
+    },
+    {
+      "index": 43,
+      "name": "Sword_Idle",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "IDLE"
+    },
+    {
+      "index": 44,
+      "name": "Walk_Formal_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "WALK"
+    },
+    {
+      "index": 45,
+      "name": "Walk_Loop",
+      "channels": 159,
+      "samplers": 159,
+      "kind": "WALK"
+    }
+  ],
+  "namedNodes": [
+    {
+      "index": 0,
+      "name": "DEF-head"
+    },
+    {
+      "index": 1,
+      "name": "DEF-neck"
+    },
+    {
+      "index": 2,
+      "name": "DEF-f_index.03.L"
+    },
+    {
+      "index": 3,
+      "name": "DEF-f_index.02.L"
+    },
+    {
+      "index": 4,
+      "name": "DEF-f_index.01.L"
+    },
+    {
+      "index": 5,
+      "name": "DEF-f_middle.03.L"
+    },
+    {
+      "index": 6,
+      "name": "DEF-f_middle.02.L"
+    },
+    {
+      "index": 7,
+      "name": "DEF-f_middle.01.L"
+    },
+    {
+      "index": 8,
+      "name": "DEF-f_pinky.03.L"
+    },
+    {
+      "index": 9,
+      "name": "DEF-f_pinky.02.L"
+    },
+    {
+      "index": 10,
+      "name": "DEF-f_pinky.01.L"
+    },
+    {
+      "index": 11,
+      "name": "DEF-f_ring.03.L"
+    },
+    {
+      "index": 12,
+      "name": "DEF-f_ring.02.L"
+    },
+    {
+      "index": 13,
+      "name": "DEF-f_ring.01.L"
+    },
+    {
+      "index": 14,
+      "name": "DEF-thumb.03.L"
+    },
+    {
+      "index": 15,
+      "name": "DEF-thumb.02.L"
+    },
+    {
+      "index": 16,
+      "name": "DEF-thumb.01.L"
+    },
+    {
+      "index": 17,
+      "name": "DEF-hand.L"
+    },
+    {
+      "index": 18,
+      "name": "DEF-forearm.L"
+    },
+    {
+      "index": 19,
+      "name": "DEF-upper_arm.L"
+    },
+    {
+      "index": 20,
+      "name": "DEF-shoulder.L"
+    },
+    {
+      "index": 21,
+      "name": "DEF-f_index.03.R"
+    },
+    {
+      "index": 22,
+      "name": "DEF-f_index.02.R"
+    },
+    {
+      "index": 23,
+      "name": "DEF-f_index.01.R"
+    },
+    {
+      "index": 24,
+      "name": "DEF-f_middle.03.R"
+    },
+    {
+      "index": 25,
+      "name": "DEF-f_middle.02.R"
+    },
+    {
+      "index": 26,
+      "name": "DEF-f_middle.01.R"
+    },
+    {
+      "index": 27,
+      "name": "DEF-f_pinky.03.R"
+    },
+    {
+      "index": 28,
+      "name": "DEF-f_pinky.02.R"
+    },
+    {
+      "index": 29,
+      "name": "DEF-f_pinky.01.R"
+    },
+    {
+      "index": 30,
+      "name": "DEF-f_ring.03.R"
+    },
+    {
+      "index": 31,
+      "name": "DEF-f_ring.02.R"
+    },
+    {
+      "index": 32,
+      "name": "DEF-f_ring.01.R"
+    },
+    {
+      "index": 33,
+      "name": "DEF-thumb.03.R"
+    },
+    {
+      "index": 34,
+      "name": "DEF-thumb.02.R"
+    },
+    {
+      "index": 35,
+      "name": "DEF-thumb.01.R"
+    },
+    {
+      "index": 36,
+      "name": "DEF-hand.R"
+    },
+    {
+      "index": 37,
+      "name": "DEF-forearm.R"
+    },
+    {
+      "index": 38,
+      "name": "DEF-upper_arm.R"
+    },
+    {
+      "index": 39,
+      "name": "DEF-shoulder.R"
+    },
+    {
+      "index": 40,
+      "name": "DEF-spine.003"
+    },
+    {
+      "index": 41,
+      "name": "DEF-spine.002"
+    },
+    {
+      "index": 42,
+      "name": "DEF-spine.001"
+    },
+    {
+      "index": 43,
+      "name": "DEF-toe.L"
+    },
+    {
+      "index": 44,
+      "name": "DEF-foot.L"
+    },
+    {
+      "index": 45,
+      "name": "DEF-shin.L"
+    },
+    {
+      "index": 46,
+      "name": "DEF-thigh.L"
+    },
+    {
+      "index": 47,
+      "name": "DEF-toe.R"
+    },
+    {
+      "index": 48,
+      "name": "DEF-foot.R"
+    },
+    {
+      "index": 49,
+      "name": "DEF-shin.R"
+    },
+    {
+      "index": 50,
+      "name": "DEF-thigh.R"
+    },
+    {
+      "index": 51,
+      "name": "DEF-hips"
+    },
+    {
+      "index": 52,
+      "name": "root"
+    },
+    {
+      "index": 53,
+      "name": "Mannequin"
+    },
+    {
+      "index": 54,
+      "name": "Rig"
+    }
+  ]
+}
