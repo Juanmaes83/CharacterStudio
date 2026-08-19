@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { HumanoidIKController } from "../ik/HumanoidIKController"
+import { applyLadderIK } from "../ik/LadderIKExtension"
 
 export const MOTION_STATES = ["IDLE", "WALK", "STOP", "TURN_LEFT", "TURN_RIGHT"]
 
@@ -21,62 +22,25 @@ function benchmarkInteractionTarget(root, state) {
   const scene = root?.parent
   if (!scene) return null
   const byName = (name) => scene.getObjectByName(name)
-
-  if (state === "PRESS_DOORBELL") {
-    const object = byName("BenchmarkDoorbell")
-    return object ? { object, hand: "right", contactPoint: worldPoint(object), type: "precise-contact" } : null
-  }
-  if (state === "KNOCK_DOOR") {
-    const object = byName("BenchmarkDoor")
-    return object ? { object, hand: "right", contactPoint: worldPoint(object, new THREE.Vector3(-0.03, 0.32, 0.08)), type: "repeated-contact" } : null
-  }
-  if (state === "PICK_UP_CUP") {
-    const object = byName("BenchmarkCup")
-    return object ? { object, hand: "right", contactPoint: worldPoint(object), gripPoint: worldPoint(object, new THREE.Vector3(0.045, 0.01, 0)), type: "small-one-hand" } : null
-  }
-  if (state === "PICK_UP_PHONE") {
-    const object = byName("BenchmarkPhone")
-    return object ? { object, hand: "right", secondaryHand: "left", contactPoint: worldPoint(object), gripPoint: worldPoint(object), type: "phone-grip" } : null
-  }
+  if (state === "PRESS_DOORBELL") { const object = byName("BenchmarkDoorbell"); return object ? { object, hand: "right", contactPoint: worldPoint(object), type: "precise-contact" } : null }
+  if (state === "KNOCK_DOOR") { const object = byName("BenchmarkDoor"); return object ? { object, hand: "right", contactPoint: worldPoint(object, new THREE.Vector3(-0.03, 0.32, 0.08)), type: "repeated-contact" } : null }
+  if (state === "PICK_UP_CUP") { const object = byName("BenchmarkCup"); return object ? { object, hand: "right", contactPoint: worldPoint(object), gripPoint: worldPoint(object, new THREE.Vector3(0.045, 0.01, 0)), type: "small-one-hand" } : null }
+  if (state === "PICK_UP_PHONE") { const object = byName("BenchmarkPhone"); return object ? { object, hand: "right", secondaryHand: "left", contactPoint: worldPoint(object), gripPoint: worldPoint(object), type: "phone-grip" } : null }
   if (state === "PICK_UP_MAGAZINE") {
     const object = byName("BenchmarkMagazine")
-    return object ? {
-      object,
-      hand: "right",
-      secondaryHand: "left",
-      contactPoint: worldPoint(object),
-      gripPoint: worldPoint(object, new THREE.Vector3(0.09, 0, -0.04)),
-      secondaryGripPoint: worldPoint(object, new THREE.Vector3(-0.09, 0, -0.04)),
-      type: "two-hand-flat-object",
-    } : null
+    return object ? { object, hand: "right", secondaryHand: "left", contactPoint: worldPoint(object), gripPoint: worldPoint(object, new THREE.Vector3(0.09, 0, -0.04)), secondaryGripPoint: worldPoint(object, new THREE.Vector3(-0.09, 0, -0.04)), type: "two-hand-flat-object" } : null
   }
   if (state === "OPEN_DOOR") {
-    const object = byName("BenchmarkDoor")
-    const handle = byName("BenchmarkDoorHandle")
-    const doorPivot = byName("BenchmarkDoorHinge")
+    const object = byName("BenchmarkDoor"), handle = byName("BenchmarkDoorHandle"), doorPivot = byName("BenchmarkDoorHinge")
     return object && handle && doorPivot ? { object, handle, doorPivot, hand: "right", contactPoint: worldPoint(handle), type: "handle-grip" } : null
   }
   if (state === "SIT_SOFA") {
     const object = byName("BenchmarkSofaSeat")
-    return object ? {
-      object,
-      seatPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)),
-      contactPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)),
-      footLeft: worldPoint(object, new THREE.Vector3(-0.18, -0.22, 0.54)),
-      footRight: worldPoint(object, new THREE.Vector3(0.18, -0.22, 0.54)),
-      type: "full-body-seat",
-    } : null
+    return object ? { object, seatPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)), contactPoint: worldPoint(object, new THREE.Vector3(0, 0.25, 0.10)), footLeft: worldPoint(object, new THREE.Vector3(-0.18, -0.22, 0.54)), footRight: worldPoint(object, new THREE.Vector3(0.18, -0.22, 0.54)), type: "full-body-seat" } : null
   }
   if (state === "LEAN_WALL") {
     const object = byName("BenchmarkWall")
-    return object ? {
-      object,
-      contactPoint: worldPoint(object, new THREE.Vector3(-0.05, -0.05, 0)),
-      pelvisContact: worldPoint(object, new THREE.Vector3(-0.06, -0.24, 0)),
-      shoulderContact: worldPoint(object, new THREE.Vector3(-0.06, 0.32, 0)),
-      surfaceNormal: new THREE.Vector3(-1, 0, 0),
-      type: "surface-contact-pose",
-    } : null
+    return object ? { object, contactPoint: worldPoint(object, new THREE.Vector3(-0.05, -0.05, 0)), pelvisContact: worldPoint(object, new THREE.Vector3(-0.06, -0.24, 0)), shoulderContact: worldPoint(object, new THREE.Vector3(-0.06, 0.32, 0)), surfaceNormal: new THREE.Vector3(-1, 0, 0), type: "surface-contact-pose" } : null
   }
   return null
 }
@@ -91,23 +55,7 @@ export class MotionController {
     this.currentAction = null
     this.fadeSeconds = 0.22
     this.postProcessor = new HumanoidIKController(root)
-
-    this.navigation = {
-      mode: "IDLE",
-      target: null,
-      facingTarget: null,
-      walkSpeed: 1.15,
-      turnSpeed: 8,
-      stopDistance: 0.08,
-      turnTolerance: THREE.MathUtils.degToRad(2),
-      preTurnTolerance: THREE.MathUtils.degToRad(8),
-      preTurnThreshold: THREE.MathUtils.degToRad(32),
-      onArrive: null,
-      turnElapsed: 0,
-      turnDuration: 0.72,
-      turnOnComplete: null,
-    }
-
+    this.navigation = { mode: "IDLE", target: null, facingTarget: null, walkSpeed: 1.15, turnSpeed: 8, stopDistance: 0.08, turnTolerance: THREE.MathUtils.degToRad(2), preTurnTolerance: THREE.MathUtils.degToRad(8), preTurnThreshold: THREE.MathUtils.degToRad(32), onArrive: null, turnElapsed: 0, turnDuration: 0.72, turnOnComplete: null }
     this._onFinished = (event) => {
       if (event.action !== this.currentAction) return
       const options = this.actionOptions.get(this.currentState) || {}
@@ -137,7 +85,6 @@ export class MotionController {
   }
 
   has(state) { return this.actions.has(state) }
-
   _prepareTurnBy(angleRadians, options = {}) {
     _turnStartQuaternion.copy(this.root.quaternion)
     _yawQuaternion.setFromAxisAngle(_worldUp, angleRadians)
@@ -168,7 +115,6 @@ export class MotionController {
   }
 
   playAction(state, options = {}) { this.transitionTo(state, options.fadeSeconds); return this.actions.get(state) }
-
   _angleTo(target) {
     _direction.subVectors(target, this.root.position); _direction.y = 0
     if (_direction.lengthSq() < 1e-8) return 0
@@ -193,13 +139,7 @@ export class MotionController {
     }
   }
 
-  turnTo(target, options = {}) {
-    this.navigation.facingTarget = target.clone ? target.clone() : new THREE.Vector3(target.x, target.y, target.z)
-    this.navigation.facingTarget.y = this.root.position.y
-    this.navigation.turnSpeed = options.turnSpeed ?? this.navigation.turnSpeed
-    this.navigation.mode = "TURN_TO"
-  }
-
+  turnTo(target, options = {}) { this.navigation.facingTarget = target.clone ? target.clone() : new THREE.Vector3(target.x, target.y, target.z); this.navigation.facingTarget.y = this.root.position.y; this.navigation.turnSpeed = options.turnSpeed ?? this.navigation.turnSpeed; this.navigation.mode = "TURN_TO" }
   turnBy(angleRadians, options = {}) {
     this._prepareTurnBy(angleRadians, options)
     const state = angleRadians >= 0 ? (this.has("TURN_LEFT_V2") ? "TURN_LEFT_V2" : (this.has("TURN_LEFT") ? "TURN_LEFT" : null)) : (this.has("TURN_RIGHT_V2") ? "TURN_RIGHT_V2" : (this.has("TURN_RIGHT") ? "TURN_RIGHT" : null))
@@ -208,8 +148,7 @@ export class MotionController {
 
   stop() {
     this.navigation.target = null; this.navigation.facingTarget = null; this.navigation.mode = "IDLE"
-    const stopState = this.has("STOP_V2") ? "STOP_V2" : (this.has("STOP") ? "STOP" : null)
-    const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
+    const stopState = this.has("STOP_V2") ? "STOP_V2" : (this.has("STOP") ? "STOP" : null), idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
     if (stopState) this.transitionTo(stopState); else if (idleState) this.transitionTo(idleState)
   }
 
@@ -223,19 +162,10 @@ export class MotionController {
     return angle
   }
 
-  _startWalkingAfterPreTurn() {
-    this.navigation.mode = "WALK_TO"
-    const walkState = this.has("WALK_V2") ? "WALK_V2" : "WALK"
-    if (this.has(walkState)) this.transitionTo(walkState, 0.14)
-  }
+  _startWalkingAfterPreTurn() { this.navigation.mode = "WALK_TO"; const walkState = this.has("WALK_V2") ? "WALK_V2" : "WALK"; if (this.has(walkState)) this.transitionTo(walkState, 0.14) }
 
   _updateNavigation(delta) {
-    if (this.navigation.mode === "PRE_TURN_WALK" && this.navigation.target) {
-      const angle = this._rotateToward(this.navigation.target, delta)
-      if (angle <= this.navigation.preTurnTolerance) this._startWalkingAfterPreTurn()
-      return
-    }
-
+    if (this.navigation.mode === "PRE_TURN_WALK" && this.navigation.target) { const angle = this._rotateToward(this.navigation.target, delta); if (angle <= this.navigation.preTurnTolerance) this._startWalkingAfterPreTurn(); return }
     if (this.navigation.mode === "WALK_TO" && this.navigation.target) {
       const angle = this._rotateToward(this.navigation.target, delta)
       _direction.subVectors(this.navigation.target, this.root.position); _direction.y = 0
@@ -243,55 +173,33 @@ export class MotionController {
       if (distance <= this.navigation.stopDistance) {
         const callback = this.navigation.onArrive
         this.navigation.target = null; this.navigation.onArrive = null; this.navigation.mode = "IDLE"
-        const stopState = this.has("STOP_V2") ? "STOP_V2" : (this.has("STOP") ? "STOP" : null)
-        const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
+        const stopState = this.has("STOP_V2") ? "STOP_V2" : (this.has("STOP") ? "STOP" : null), idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
         if (stopState) this.transitionTo(stopState); else if (idleState) this.transitionTo(idleState)
         callback?.(); return
       }
-      // If a target changes enough while walking, stop translating and reacquire orientation first.
       if (angle > this.navigation.preTurnThreshold) { this.navigation.mode = "PRE_TURN_WALK"; return }
       _direction.normalize()
-      const distanceScale = THREE.MathUtils.clamp(distance / 0.45, 0.16, 1)
-      const turnScale = THREE.MathUtils.clamp(1 - angle / (Math.PI * .75), 0.32, 1)
-      const step = Math.min(distance, this.navigation.walkSpeed * distanceScale * turnScale * delta)
+      const distanceScale = THREE.MathUtils.clamp(distance / 0.45, 0.16, 1), turnScale = THREE.MathUtils.clamp(1 - angle / (Math.PI * .75), 0.32, 1), step = Math.min(distance, this.navigation.walkSpeed * distanceScale * turnScale * delta)
       this.root.position.addScaledVector(_direction, step)
     }
-
     if (this.navigation.mode === "TURN_TO" && this.navigation.facingTarget) {
       const angle = this._rotateToward(this.navigation.facingTarget, delta)
-      if (angle <= this.navigation.turnTolerance) {
-        this.navigation.facingTarget = null; this.navigation.mode = "IDLE"
-        const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
-        if (idleState) this.transitionTo(idleState)
-      }
+      if (angle <= this.navigation.turnTolerance) { this.navigation.facingTarget = null; this.navigation.mode = "IDLE"; const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null); if (idleState) this.transitionTo(idleState) }
     }
-
     if (this.navigation.mode === "TURN_BY") {
       this.navigation.turnElapsed += delta
-      const raw = THREE.MathUtils.clamp(this.navigation.turnElapsed / this.navigation.turnDuration, 0, 1)
-      const eased = raw * raw * (3 - 2 * raw)
+      const raw = THREE.MathUtils.clamp(this.navigation.turnElapsed / this.navigation.turnDuration, 0, 1), eased = raw * raw * (3 - 2 * raw)
       this.root.quaternion.slerpQuaternions(_turnStartQuaternion, _turnTargetQuaternion, eased)
-      if (raw >= 1) {
-        const callback = this.navigation.turnOnComplete
-        this.navigation.turnOnComplete = null; this.navigation.mode = "IDLE"
-        const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null)
-        if (idleState) this.transitionTo(idleState, 0.14)
-        callback?.()
-      }
+      if (raw >= 1) { const callback = this.navigation.turnOnComplete; this.navigation.turnOnComplete = null; this.navigation.mode = "IDLE"; const idleState = this.has("IDLE_V2") ? "IDLE_V2" : (this.has("IDLE") ? "IDLE" : null); if (idleState) this.transitionTo(idleState, 0.14); callback?.() }
     }
   }
 
   getDiagnostics() { return { navigationMode: this.navigation.mode, state: this.currentState, ik: this.postProcessor?.getDiagnostics?.() || null } }
-
   update(delta) {
     this._updateNavigation(delta)
     this.mixer.update(delta)
     this.postProcessor?.update?.(delta, this.currentState, this.currentAction)
+    applyLadderIK(this.postProcessor, this.currentState, this.currentAction)
   }
-
-  dispose() {
-    this.mixer.removeEventListener("finished", this._onFinished)
-    this.postProcessor?.dispose?.()
-    this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.root); this.actions.clear(); this.actionOptions.clear()
-  }
+  dispose() { this.mixer.removeEventListener("finished", this._onFinished); this.postProcessor?.dispose?.(); this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.root); this.actions.clear(); this.actionOptions.clear() }
 }
