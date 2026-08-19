@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { registerSocialMotionFoundationV3 } from "./SocialMotionFoundationV3"
+import { ensureTerrainSemanticBenchmarks } from "../interaction/TerrainSemanticBenchmarks"
 
 const NEUTRAL = {
   leftUpperArm: [0, 0, 1.18], rightUpperArm: [0, 0, -1.18],
@@ -19,6 +20,8 @@ const EXTRA = {
     { t: 1, bones: { ...NEUTRAL } },
   ] },
 }
+
+const TERRAIN_ONE_SHOT = ["STEP_UP", "STEP_DOWN", "STAIRS_UP", "STAIRS_DOWN", "LADDER_UP", "LADDER_DOWN"]
 
 function clip(root, name, definition) {
   const names = new Set()
@@ -40,6 +43,23 @@ function clip(root, name, definition) {
   return new THREE.AnimationClip(`Character2027_V2_${name}`, definition.duration, tracks)
 }
 
+function configureTerrainActions(controller) {
+  TERRAIN_ONE_SHOT.forEach((name) => {
+    const action = controller.actions.get(name)
+    if (!action) return
+    action.setLoop(THREE.LoopOnce, 1)
+    action.clampWhenFinished = true
+    const previous = controller.actionOptions.get(name) || {}
+    controller.actionOptions.set(name, {
+      ...previous,
+      loop: false,
+      clamp: true,
+      recoverTo: "IDLE_V2",
+      fadeSeconds: 0.14,
+    })
+  })
+}
+
 export function registerMotionFoundationV2Extra(controller, root) {
   const report = {}
   Object.entries(EXTRA).forEach(([name, definition]) => {
@@ -51,7 +71,27 @@ export function registerMotionFoundationV2Extra(controller, root) {
   // Social V3 deliberately re-registers the social states after V2 so their
   // complete authored body tracks win over the older IK-owned definitions.
   Object.assign(report, registerSocialMotionFoundationV3(controller, root))
+
+  // Terrain actions are semantic one-shot interactions with real world
+  // geometry. The ladder is materialised here because the older benchmark
+  // scene never had a ladder object at all.
+  ensureTerrainSemanticBenchmarks(root.parent)
+  configureTerrainActions(controller)
+  TERRAIN_ONE_SHOT.forEach((name) => {
+    if (report[name]) report[name] = { ...report[name], loop: false, semanticTerrain: true }
+    else if (controller.actions.has(name)) {
+      const action = controller.actions.get(name)
+      report[name] = {
+        duration: action.getClip().duration,
+        tracks: action.getClip().tracks.length,
+        loop: false,
+        semanticTerrain: true,
+        source: "Motion Foundation V2 + Terrain Semantic Binding",
+      }
+    }
+  })
   return report
 }
 
 export const V2_EXTRA_VERTICAL = Object.keys(EXTRA)
+export const TERRAIN_SEMANTIC_ACTIONS = Object.freeze(TERRAIN_ONE_SHOT)
