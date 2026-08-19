@@ -1,0 +1,46 @@
+name: Character 2027 Donor Motion CI
+
+on:
+  push:
+    branches:
+      - agent/character-2027-donor-clone-01
+  pull_request:
+    branches:
+      - agent/character-2027-ci-base
+
+permissions:
+  contents: read
+
+jobs:
+  validate-donor-motion:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Verify vendored Quaternius payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s public/vendor/quaternius-u-a-l/AnimationLibrary_Godot_Standard.gltf
+          test -s public/vendor/quaternius-u-a-l/AnimationLibrary_Godot_Standard.bin
+          test -s public/vendor/quaternius-u-a-l/manifest.json
+          grep -q 'e24c23cf2a1323488a3faa226ea7ea21f644b73e' public/vendor/quaternius-u-a-l/manifest.json
+
+      - name: Donor baseline contract tests
+        run: npx vitest run src/character2027/animation/QuaterniusMotionSource.test.js
+
+      - name: Full test suite
+        run: npm run test:run
+
+      - name: Production build
+        run: npm run build
