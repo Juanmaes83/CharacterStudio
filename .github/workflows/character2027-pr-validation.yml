@@ -21,8 +21,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Human hinge tests
+      - name: Human hinge tests when present
+        if: ${{ hashFiles('tests/unit/character2027-human-hinge.test.js') != '' }}
         run: npx vitest run tests/unit/character2027-human-hinge.test.js
+
+      - name: Donor motion tests when present
+        if: ${{ hashFiles('src/character2027/animation/QuaterniusMotionSource.test.js') != '' }}
+        run: npx vitest run src/character2027/animation/QuaterniusMotionSource.test.js
 
       - name: Full tests
         run: npm run test:run
