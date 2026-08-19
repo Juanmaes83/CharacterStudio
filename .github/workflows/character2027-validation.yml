@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/character-2027-prototype-01
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
