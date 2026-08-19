@@ -12,6 +12,14 @@ function makeRuntime() {
     has: vi.fn((name) => registered.has(name)),
     playAction: vi.fn((name) => { controller.currentState = name; return name }),
     transitionTo: vi.fn((name) => { controller.currentState = name }),
+    walkTo: vi.fn((target, options = {}) => {
+      controller.navigation.target = target.clone()
+      controller.navigation.walkSpeed = options.walkSpeed
+      controller.navigation.stopDistance = options.stopDistance
+      controller.navigation.onArrive = options.onArrive
+      controller.navigation.mode = "WALK_TO"
+      controller.currentState = "WALK_V2"
+    }),
     stop: vi.fn(() => { controller.currentState = "STOP_V2" }),
     turnTo: vi.fn(),
   }
@@ -37,17 +45,30 @@ describe("CharacterActionAPI", () => {
     expect(state).toHaveBeenCalledWith("WAVE")
   })
 
-  it("preserves approved Motion Lab moveTo defaults", () => {
+  it("delegates moveTo to MotionController so pre-turn and locomotion sequencing stay centralized", () => {
     const { api, root, controller, state, status } = makeRuntime()
     root.position.set(0, 0.25, 0)
     api.moveTo([1.5, 0, 0.5], { label: "RIGHT TARGET" })
-    expect(controller.transitionTo).toHaveBeenCalledWith("WALK_V2")
-    expect(controller.navigation.mode).toBe("WALK_TO")
-    expect(controller.navigation.walkSpeed).toBe(0.78)
-    expect(controller.navigation.stopDistance).toBe(0.08)
-    expect(controller.navigation.target.toArray()).toEqual([1.5, 0.25, 0.5])
+
+    expect(controller.walkTo).toHaveBeenCalledTimes(1)
+    const [target, options] = controller.walkTo.mock.calls[0]
+    expect(target.toArray()).toEqual([1.5, 0.25, 0.5])
+    expect(options.walkSpeed).toBe(0.78)
+    expect(options.stopDistance).toBe(0.08)
+    expect(controller.transitionTo).not.toHaveBeenCalled()
     expect(state).toHaveBeenCalledWith("WALK_V2")
     expect(status).toHaveBeenCalledWith("Walking to RIGHT TARGET…")
+  })
+
+  it("keeps arrival callback/status behind the controller-owned walk sequence", () => {
+    const { api, controller, status } = makeRuntime()
+    const onArrive = vi.fn()
+    api.moveTo([1, 0, 0], { label: "terrace", onArrive })
+
+    expect(onArrive).not.toHaveBeenCalled()
+    controller.navigation.onArrive()
+    expect(status).toHaveBeenCalledWith("ARRIVED: terrace")
+    expect(onArrive).toHaveBeenCalledTimes(1)
   })
 
   it("exposes a serializable command boundary for world integrations", () => {
@@ -56,18 +77,20 @@ describe("CharacterActionAPI", () => {
     expect(controller.playAction).toHaveBeenCalledWith("WAVE", { fadeSeconds: undefined })
 
     api.execute({ type: "moveTo", target: [3, 0, -1], options: { label: "terrace" } })
-    expect(controller.navigation.target.x).toBe(3)
-    expect(controller.navigation.target.z).toBe(-1)
+    const [target] = controller.walkTo.mock.calls.at(-1)
+    expect(target.x).toBe(3)
+    expect(target.z).toBe(-1)
   })
 
-  it("starts semantic interactions through the same public API", () => {
+  it("starts semantic interaction approach through the same controller-owned locomotion path", () => {
     const { api, controller, lookAt } = makeRuntime()
     api.interact("PICK_UP_PHONE")
     expect(lookAt.lookAt).toHaveBeenCalled()
-    expect(controller.transitionTo).toHaveBeenCalledWith("WALK_V2")
-    expect(controller.navigation.mode).toBe("WALK_TO")
-    expect(controller.navigation.walkSpeed).toBe(0.72)
-    expect(controller.navigation.stopDistance).toBe(0.12)
+    expect(controller.walkTo).toHaveBeenCalledTimes(1)
+    const [target, options] = controller.walkTo.mock.calls[0]
+    expect(target.toArray()).toEqual([2, 0, 1])
+    expect(options.walkSpeed).toBe(0.72)
+    expect(options.stopDistance).toBe(0.12)
   })
 
   it("rejects unknown actions and command types clearly", () => {
