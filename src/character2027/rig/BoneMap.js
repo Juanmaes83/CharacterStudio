@@ -1,4 +1,5 @@
 import { VRMRigMapMixamo } from "../../library/VRMRigMapMixamo"
+import { QUATERNIUS_RIG_MAP } from "../animation/QuaterniusRigMap"
 
 export const REQUIRED_HUMANOID_BONES = [
   "hips",
@@ -25,6 +26,9 @@ export function normalizeMixamoBoneName(name = "") {
 }
 
 export function resolveTargetBoneName(sourceBoneName, targetBoneNames) {
+  const quaterniusMapped = QUATERNIUS_RIG_MAP[sourceBoneName]
+  if (quaterniusMapped && targetBoneNames.has(quaterniusMapped)) return quaterniusMapped
+
   const normalized = normalizeMixamoBoneName(sourceBoneName)
   const mapped = VRMRigMapMixamo[normalized]
   if (mapped && targetBoneNames.has(mapped)) return mapped
