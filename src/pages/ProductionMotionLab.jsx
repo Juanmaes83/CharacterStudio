@@ -7,6 +7,7 @@ import { loadQuaterniusManifest, loadQuaterniusMotionLibrary } from "../characte
 import { findTargetBone } from "../character2027/animation/QuaterniusRigMap"
 
 const loader = new GLTFLoader()
+const TARGET_HEIGHT = 1.72
 
 const ui = {
   page: { position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "410px 1fr", background: "#0e0e0e", color: "#f4f4f4", fontFamily: "Inter, system-ui, sans-serif" },
@@ -59,9 +60,55 @@ function liveJointAngles(root) {
   }
 }
 
+function worldPoint(root, canonicalName) {
+  const bone = findTargetBone(root, canonicalName)
+  return bone ? bone.getWorldPosition(new THREE.Vector3()) : null
+}
+
+function normalizeAvatarFromRig(root) {
+  root.updateMatrixWorld(true)
+  const head = worldPoint(root, "head")
+  const hips = worldPoint(root, "hips")
+  const footL = worldPoint(root, "leftFoot")
+  const footR = worldPoint(root, "rightFoot")
+  if (!head || !hips || (!footL && !footR)) throw new Error("Cannot frame avatar: head/hips/feet rig anchors are missing")
+
+  const feet = [footL, footR].filter(Boolean)
+  const footY = Math.min(...feet.map((p) => p.y))
+  const rawHeight = head.y - footY
+  if (!Number.isFinite(rawHeight) || Math.abs(rawHeight) < 1e-4) throw new Error("Cannot frame avatar: invalid humanoid rig height")
+
+  const factor = THREE.MathUtils.clamp(TARGET_HEIGHT / Math.abs(rawHeight), 0.01, 100)
+  root.scale.multiplyScalar(factor)
+  root.updateMatrixWorld(true)
+
+  const head2 = worldPoint(root, "head")
+  const hips2 = worldPoint(root, "hips")
+  const feet2 = [worldPoint(root, "leftFoot"), worldPoint(root, "rightFoot")].filter(Boolean)
+  const floorY = Math.min(...feet2.map((p) => p.y))
+
+  root.position.x -= hips2.x
+  root.position.z -= hips2.z
+  root.position.y -= floorY
+  root.updateMatrixWorld(true)
+
+  const finalHead = worldPoint(root, "head")
+  const finalFeet = [worldPoint(root, "leftFoot"), worldPoint(root, "rightFoot")].filter(Boolean)
+  const finalFloor = Math.min(...finalFeet.map((p) => p.y))
+  const finalHeight = Math.max(finalHead.y - finalFloor, 0.5)
+
+  return {
+    height: finalHeight,
+    target: new THREE.Vector3(0, finalFloor + finalHeight * 0.52, 0),
+    cameraDistance: Math.max(3.0, finalHeight * 2.35),
+  }
+}
+
 export default function ProductionMotionLab() {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
+  const cameraRef = useRef(null)
+  const controlsRef = useRef(null)
   const avatarRef = useRef(null)
   const helperRef = useRef(null)
   const performanceRef = useRef(null)
@@ -95,7 +142,8 @@ export default function ProductionMotionLab() {
     scene.background = new THREE.Color(0x101010)
     sceneRef.current = scene
     const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100)
-    camera.position.set(3.3, 1.8, 5.4)
+    camera.position.set(3.0, 1.7, 4.8)
+    cameraRef.current = camera
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -104,14 +152,16 @@ export default function ProductionMotionLab() {
     renderer.domElement.style.height = "100%"
     mount.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 0.95, 0)
+    controls.target.set(0, 0.9, 0)
     controls.enableDamping = true
+    controlsRef.current = controls
     scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.1))
     const key = new THREE.DirectionalLight(0xffffff, 3.0)
     key.position.set(3, 5, 4)
     scene.add(key)
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(5, 64), new THREE.MeshStandardMaterial({ roughness: 0.92 }))
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(5, 64), new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.92 }))
     floor.rotation.x = -Math.PI / 2
+    floor.position.y = -0.005
     scene.add(floor)
 
     const resize = () => {
@@ -159,24 +209,26 @@ export default function ProductionMotionLab() {
       const gltf = await localFile(file)
       const root = gltf.scene
       root.traverse((node) => {
-        if (node.isMesh) { node.castShadow = true; node.receiveShadow = true }
+        if (node.isMesh) {
+          node.castShadow = true
+          node.receiveShadow = true
+          node.frustumCulled = false
+        }
+        if (node.isSkinnedMesh && node.skeleton) {
+          node.skeleton.pose()
+          node.skeleton.update()
+        }
       })
+      root.updateMatrixWorld(true)
+
       performanceRef.current?.dispose()
       if (helperRef.current) sceneRef.current.remove(helperRef.current)
       if (avatarRef.current) sceneRef.current.remove(avatarRef.current)
 
-      const box = new THREE.Box3().setFromObject(root)
-      const size = box.getSize(new THREE.Vector3())
-      root.scale.multiplyScalar(1.75 / Math.max(size.y, 0.0001))
-      root.updateMatrixWorld(true)
-      const scaled = new THREE.Box3().setFromObject(root)
-      const center = scaled.getCenter(new THREE.Vector3())
-      root.position.x -= center.x
-      root.position.z -= center.z
-      root.position.y -= scaled.min.y
-      root.updateMatrixWorld(true)
-
       const nextRig = inspectCriticalRig(root)
+      if (!nextRig.pass) throw new Error(`Critical rig missing: ${nextRig.missing.join(", ")}`)
+      const framing = normalizeAvatarFromRig(root)
+
       sceneRef.current.add(root)
       const helper = new THREE.SkeletonHelper(root)
       helper.visible = showSkeleton
@@ -188,11 +240,23 @@ export default function ProductionMotionLab() {
       setActive(null)
       setReport(null)
 
+      const camera = cameraRef.current
+      const controls = controlsRef.current
+      if (camera && controls) {
+        controls.target.copy(framing.target)
+        camera.position.set(framing.cameraDistance * 0.58, framing.target.y + framing.height * 0.12, framing.cameraDistance)
+        camera.near = 0.01
+        camera.far = Math.max(100, framing.cameraDistance * 20)
+        camera.updateProjectionMatrix()
+        camera.lookAt(framing.target)
+        controls.update()
+      }
+
       if (!donorRef.current) throw new Error("Donor library is still loading")
       performanceRef.current = new CharacterPerformanceController({ targetRoot: root, donorRoot: donorRef.current.root, donorClips: donorRef.current.clips })
       const result = performanceRef.current.idle()
       setActive("Idle_Loop")
-      setReport(result.report)
+      setReport({ ...result.report, avatarHeight: framing.height, autoFramed: true })
     } catch (e) {
       setError(`Avatar load failed: ${e.message || e}`)
     }
