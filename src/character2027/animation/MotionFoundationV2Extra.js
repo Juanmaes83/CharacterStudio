@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { registerSocialMotionFoundationV3 } from "./SocialMotionFoundationV3"
 
 const NEUTRAL = {
   leftUpperArm: [0, 0, 1.18], rightUpperArm: [0, 0, -1.18],
@@ -46,6 +47,10 @@ export function registerMotionFoundationV2Extra(controller, root) {
     controller.register(name, c, { loop: false, clamp: true })
     report[name] = { duration: c.duration, tracks: c.tracks.length, loop: false, source: "Motion Foundation V2 extra" }
   })
+
+  // Social V3 deliberately re-registers the social states after V2 so their
+  // complete authored body tracks win over the older IK-owned definitions.
+  Object.assign(report, registerSocialMotionFoundationV3(controller, root))
   return report
 }
 
