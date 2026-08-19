@@ -5,10 +5,7 @@ import * as THREE from "three"
  *
  * MotionLab and WORLD clients should call this API instead of manipulating
  * MotionController.navigation, AnimationMixer actions or IK directly.
- *
- * This first contract intentionally preserves the Motion Lab "CASI BUENO"
- * behaviour. Biomechanics remain owned by MotionController/Motion Foundation;
- * this class only provides a reusable command boundary.
+ * Internal locomotion/biomechanics may improve without changing this contract.
  */
 export class CharacterActionAPI {
   constructor({ root, controller, lookAt = null, interactionTargets = null, onStateChange = null, onStatus = null }) {
@@ -43,9 +40,8 @@ export class CharacterActionAPI {
   }
 
   /**
-   * Move toward a world-space point.
-   * Defaults mirror the human-approved MotionLab baseline to avoid changing
-   * locomotion behaviour while the public API boundary is introduced.
+   * Move toward a world-space point through MotionController.walkTo().
+   * The controller owns pre-turn, locomotion start, deceleration and stop.
    */
   moveTo(target, options = {}) {
     if (!target) throw new Error("moveTo requires a target")
@@ -57,20 +53,17 @@ export class CharacterActionAPI {
     const label = options.label || "target"
     this._status(`Walking to ${label}…`)
 
-    if (this.controller.has("WALK_V2")) this.controller.transitionTo("WALK_V2")
-    else if (this.controller.has("WALK")) this.controller.transitionTo("WALK")
+    this.controller.walkTo(point, {
+      walkSpeed: options.walkSpeed ?? 0.78,
+      stopDistance: options.stopDistance ?? 0.08,
+      onArrive: () => {
+        this._status(options.arrivalStatus || `ARRIVED: ${label}`)
+        options.onArrive?.()
+      },
+    })
 
-    this.controller.navigation.target = point
-    this.controller.navigation.walkSpeed = options.walkSpeed ?? 0.78
-    this.controller.navigation.stopDistance = options.stopDistance ?? 0.08
-    this.controller.navigation.onArrive = () => {
-      this._status(options.arrivalStatus || `ARRIVED: ${label}`)
-      if (this.controller.has("STOP_V2")) this.controller.transitionTo("STOP_V2")
-      else if (this.controller.has("STOP")) this.controller.transitionTo("STOP")
-      options.onArrive?.()
-    }
-    this.controller.navigation.mode = "WALK_TO"
-    this._state(this.controller.has("WALK_V2") ? "WALK_V2" : "WALK")
+    const state = this.controller.currentState || (this.controller.has("WALK_V2") ? "WALK_V2" : "WALK")
+    this._state(state)
   }
 
   stop() {
@@ -104,7 +97,8 @@ export class CharacterActionAPI {
   /**
    * Execute a semantic interaction target from the world/benchmark registry.
    * Expected descriptor: { approachPoint, lookAt }.
-   * Contact/IK stays inside MotionController and its post-processors.
+   * Navigation goes through MotionController.walkTo(); contact/IK stays inside
+   * MotionController and its post-processors.
    */
   interact(action, descriptor = null, options = {}) {
     const target = descriptor || this.interactionTargets?.[action]
@@ -119,24 +113,26 @@ export class CharacterActionAPI {
     this._status(`${action}: approaching semantic target…`)
     this.lookAtController?.lookAt?.(target.lookAt, { weight: options.approachLookWeight ?? 0.9 })
 
-    const approach = target.approachPoint.clone ? target.approachPoint.clone() : new THREE.Vector3(target.approachPoint.x, target.approachPoint.y, target.approachPoint.z)
+    const approach = target.approachPoint.clone
+      ? target.approachPoint.clone()
+      : new THREE.Vector3(target.approachPoint.x, target.approachPoint.y, target.approachPoint.z)
     approach.y = this.root.position.y
-    this.controller.navigation.target = approach
-    this.controller.navigation.walkSpeed = options.walkSpeed ?? 0.72
-    this.controller.navigation.stopDistance = options.stopDistance ?? 0.12
-    this.controller.navigation.mode = "WALK_TO"
-    if (this.controller.has("WALK_V2")) this.controller.transitionTo("WALK_V2")
-    else if (this.controller.has("WALK")) this.controller.transitionTo("WALK")
 
-    this.controller.navigation.onArrive = () => {
-      this.controller.turnTo(target.lookAt, { turnSpeed: options.turnSpeed ?? 6 })
-      this.lookAtController?.lookAt?.(target.lookAt, { weight: 1 })
-      this._pendingInteractionTimer = setTimeout(() => {
-        this._pendingInteractionTimer = null
-        this.perform(action, { clearLookAt: false, status: `${action}: benchmark action` })
-      }, options.alignDelayMs ?? 260)
-    }
-    this._state(this.controller.has("WALK_V2") ? "WALK_V2" : "WALK")
+    this.controller.walkTo(approach, {
+      walkSpeed: options.walkSpeed ?? 0.72,
+      stopDistance: options.stopDistance ?? 0.12,
+      onArrive: () => {
+        this.controller.turnTo(target.lookAt, { turnSpeed: options.turnSpeed ?? 6 })
+        this.lookAtController?.lookAt?.(target.lookAt, { weight: 1 })
+        this._pendingInteractionTimer = setTimeout(() => {
+          this._pendingInteractionTimer = null
+          this.perform(action, { clearLookAt: false, status: `${action}: benchmark action` })
+        }, options.alignDelayMs ?? 260)
+      },
+    })
+
+    const state = this.controller.currentState || (this.controller.has("WALK_V2") ? "WALK_V2" : "WALK")
+    this._state(state)
   }
 
   /**
