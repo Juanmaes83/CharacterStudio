@@ -19,6 +19,11 @@ def main():
         page.locator('#result[data-status="pass"]').wait_for(timeout=15000)
         runtime = page.evaluate("window.__CHARACTER2027_TERRAIN_E2E__")
         assert runtime and runtime["pass"], runtime
+        walk = next((item for item in runtime["report"] if item["action"] == "WALK_V2_BUTTON"), None)
+        assert walk, runtime
+        assert walk["mode"] == "moveTo", walk
+        assert walk["distance"] > 1.15, walk
+        assert walk["navigationMode"] == "IDLE", walk
         assert not console_errors, f"console errors: {console_errors}"
         assert not page_errors, f"page errors: {page_errors}"
         page.screenshot(path=str(SCREENSHOT), full_page=True)
