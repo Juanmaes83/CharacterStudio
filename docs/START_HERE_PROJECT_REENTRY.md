@@ -324,44 +324,17 @@ Do not assume:
 
 # 11. PROJECT-SPECIFIC REENTRY BLOCK
 
-When this master template is copied into a project, fill in this section and keep the universal doctrine above intact unless an ecosystem-wide decision formally changes it.
-
 ```text
-PROJECT NAME:
-
-PROJECT PURPOSE / DNA:
-
-MOTHER / BASE RUNTIME:
-
-CURRENT PRIORITY:
-
-CURRENT ACTIVE PHASE:
-
-BRAIN — local authority/capabilities:
-
-SKELETON — local authority/capabilities:
-
-SKIN — current status:
-
-CURRENT SKIN CLASSIFICATION:
-[ ] final-approved
-[ ] candidate-final
-[ ] provisional
-[ ] blockout/proxy
-
-LOCAL CANONICAL START_HERE:
-
-LOCAL ACTIVE ROADMAP:
-
-LOCAL ACTIVE EXECUTION LOG:
-
-FROZEN / VALIDATED DONORS:
-
-KNOWN SKIN-COUPLING DEBT:
-
-DO NOT REOPEN / DO NOT TOUCH:
-
-NEXT VALIDATION GATE:
+PROJECT NAME: CharacterStudio / Character 2027 workstream
+PROJECT PURPOSE / DNA: avatar creation/runtime platform for glTF/VRM characters, rigging, optimization and programmable animation.
+MOTHER / BASE RUNTIME: CharacterStudio itself; world products consume its published/runtime capabilities through explicit seams.
+CURRENT PRIORITY: preserve rig/motion/IK/action/runtime contracts before avatar-skin or Studio UI expansion.
+CURRENT ACTIVE PHASE: verify branch before edits; the ecosystem has a validated Character 2027 branch used by VECINIA and it must not be silently regressed.
+CURRENT SKIN CLASSIFICATION: avatar appearance/assets are replaceable presentation; rig, bone semantics, motion/action contracts and published profiles are skeleton/brain-adjacent and must survive skin changes.
+LOCAL CANONICAL START_HERE: README.md first; then current branch-specific handoff/docs only as needed.
+LOCAL ACTIVE ROADMAP: VERIFY ON REENTRY from the active Character 2027 branch/project docs.
+DO NOT REOPEN / DO NOT TOUCH: do not replace validated motion/IK/action behaviour or conflate arbitrary avatar assets with approved runtime parity.
+NEXT VALIDATION GATE: identify current validated branch/head and run its local Motion/Runtime validation before structural changes.
 ```
 
 Keep this block concise. It is a reentry snapshot, not a second roadmap.
